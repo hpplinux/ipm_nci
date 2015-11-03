@@ -1,0 +1,2032 @@
+#!/usr/bin/perl 
+#use strict;
+
+##############################
+# make_wrappers for IPM
+#
+# This script writes
+#  ./libipm.c 
+#  ./libipm_io.c
+#  ./ipm_calls.h
+#  ./libtiny.c
+#  ./libipm_io.c
+#  ./libipm_mpiio.c
+#  ../include/ipm_fproto.h
+#  ../include/ipm_calls.h
+#
+# the C code generated is a
+# pattern largely based on
+# the contents of ipm_key
+#
+# David Skinner (NERSC/LBL)
+# Sep 2004 dskinner@nersc.gov
+#
+##############################
+#  THIS IS OPEN SOURCE CODE  #
+#       SEE ../LICENSE       # 
+##############################
+
+#####
+#   Parse arguements
+#####
+
+$FUNDERSCORE_POST = "";
+$FUNDERSCORE_PRE = "";
+$SPLIT_COLLECTIVE=0;
+# disabled fortran wrapper by Jie
+$WRAP_FORTRAN=0; 
+$build_id = time();
+
+$done = 0;
+while($done == 0) {
+ if($ARGV[0] =~ /^-nofort$/) {
+  $WRAP_FORTRAN=0;
+ } elsif($ARGV[0] =~ /^-split_collectives$/) {
+  $SPLIT_COLLECTIVE=1;
+ } elsif($ARGV[0] =~ /^-funderscore_post$/) {
+  $FUNDERSCORE_POST = $FUNDERSCORE_POST."_";
+ } elsif($ARGV[0] =~ /^-funderscore_pre$/) {
+  $FUNDERSCORE_PRE = $FUNDERSCORE_PRE."_";
+ } elsif($ARGV[0] =~ /^-prep$/) {
+  $ONLY_PREP=1;
+ } else {
+  $IPM_KEYFILE = $ARGV[0];
+  $done = 1;
+ }
+ shift @ARGV;
+}
+
+
+unless (-e $IPM_KEYFILE) {
+ print "ipm_key file not found (IPM_KEYFILE=$IPM_KEYFILE)\n";
+ exit(1);
+}
+
+
+#####
+#   Parse the key file
+#####
+%call = ();
+%tag = ();
+sub numy { $a <=> $b }
+
+#$n = nfind("a",\@A); $n gives number of "a" elements in @A
+sub nfind {
+    my $pelem = shift;
+    my $arryr = shift;
+    my $n = 0;
+    warn "Not an array reference" if ref($arryr) ne "ARRAY";
+    for my $elem (@$arryr) {
+     if($elem =~ /^$pelem$/) {
+       $n++;
+     }
+    }
+    return $n;
+}
+
+open(FH,"< $IPM_KEYFILE") || die "Cannot open $IPM_KEYFILE";
+while(defined($line = <FH>)) {
+ if($line !~ /\|MP[IE]_/) {next;}
+ chomp($line);
+ @v = split('\|',$line);
+ $id = $v[0];
+ next if ($SPLIT_COLLECTIVE==0 && $line =~ "MPE_I");
+ @u = split('\,',$v[4]);
+ $call{$id} = {
+  idv => "$v[0]",
+  idl => "$v[1]",
+  cpt => "$v[2]",
+  fpt => "$v[3]",
+  sem => "$u[0]",
+  byt => "$u[1]",
+  rnk => "$u[2]",
+  dat => "$u[3]",
+  com => "$u[4]"};
+
+ $_ = $call{$id}->{cpt};
+ /(.*) (.*)\((.*)\)/;
+ $call{$id}{crv} = $1;
+ $call{$id}{lab} = $2;
+ $call{$id}{cfn} = $2;
+ $call{$id}{cai} = $3;
+ $call{$id}{car} = $3;
+ $call{$id}{car} =~ s/\(//;
+ $call{$id}{car} =~ s/\)//;
+ $call{$id}{car} =~ s/void \*//g;
+ $call{$id}{car} =~ s/void//g;
+ $call{$id}{car} =~ s/int \*//g;
+ $call{$id}{car} =~ s/char \*\*\*//g;
+ $call{$id}{car} =~ s/int //g;
+ $call{$id}{car} =~ s/MPI_Datatype//g;
+ $call{$id}{car} =~ s/MPI_Request \*//g;
+ $call{$id}{car} =~ s/MPI_Status \*//g;
+ $call{$id}{car} =~ s/MPI_Comm//g;
+ $call{$id}{car} =~ s/MPI_Op//g;
+ $call{$id}{car} =~ s/ //g;
+ $_ = $call{$id}{fpt};
+ /(.*) (.*)\((.*)\)/;
+ $call{$id}{frv} = $1;
+ $call{$id}{ffn} = $2.$FUNDERSCORE_POST;
+ $call{$id}{fai} = $3;
+ $call{$id}{far} = $3;
+ $call{$id}{far} =~ s/\(//;
+ $call{$id}{far} =~ s/\)//;
+ $call{$id}{far} =~ s/void \*//g;
+ $call{$id}{far} =~ s/int \*//g;
+ $call{$id}{far} =~ s/int //g; 
+ $call{$id}{far} =~ s/MPI_Datatype \*//g;
+ $call{$id}{far} =~ s/MPI_Request \*//g;
+ $call{$id}{far} =~ s/MPI_Status \*//g;
+ $call{$id}{far} =~ s/MPI_Comm \*//g;
+ $call{$id}{far} =~ s/MPI_Op//g;
+ $call{$id}{far} =~ s/ //g;
+
+ $call{$id}{fai} =~ s/int/MPI_Fint/g;
+
+ $call{$id}{f2c} =  $call{$id}{far};
+ $call{$id}{f2c} =~ s/,info//g;
+ @args = split(/,/, $call{$id}{f2c});
+ foreach $_ (@args )
+ {
+     s/^comm$/MPI_Comm_f2c(*comm)/g;
+     s/^stype$/MPI_Type_f2c(*stype)/g;
+     s/^rtype$/MPI_Type_f2c(*rtype)/g;
+     s/^type$/MPI_Type_f2c(*type)/g;
+     s/^op$/MPI_Op_f2c(*op)/g;
+     s/^req$/&creq/g;
+     s/^request$/MPI_Request_f2c(*request)/g;
+     s/^scount$/*scount/g;
+     s/^rcount$/*rcount/g;
+     s/^dest$/*dest/g;
+     s/^tag$/*tag/g;
+     s/^stag$/*stag/g;
+     s/^rtag$/*rtag/g;
+     s/^root$/*root/g;
+     s/^inum$/*inum/g;
+     s/^num$/*num/g;
+     s/^src$/*src/g;
+     s/^size$/*size/g;
+     #s/^osize$/osize/g; osize unchanged
+     s/^info$//g;
+     s/^status$/&cstat/g;
+ }
+ $"=",";
+ $call{$id}{f2c} = "@args";
+
+}
+close(FH);
+
+
+############################################################################### 
+# Generate prep info for config.h
+############################################################################### 
+$ncalls = 0; foreach $id (keys %call) { $ncalls++; }
+if($ONLY_PREP == 1) {
+ print "#define IPM_NCALLS $ncalls\n";
+ print "#define IPM_BUILD_ID \"$build_id\"\n";
+ exit(0);
+}
+
+###############################################################################
+# Generate ipm_buildinfo.c
+###############################################################################
+open(FH,">  buildinfo.c") || die "Cannot open buildinfo.c";
+print FH<<EOF;
+/*
+ * Build time constants
+ *
+ * DO NOT EDIT: automatically generated at buildtime by make_wrappers
+ */
+
+/* 
+EOF
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ printf FH "%d %-4s %-10s %-75s %-15s %-15s %-10s %-10s %-10s \n", $id , $c->{crv}, $c->{cfn}, $c->{car}, $c->{byt}, $c->{rnk}, $c->{dat}, $c->{com}, $c->{ffn} ;
+}
+
+print FH<<EOF;
+*/
+
+/*
+EOF
+
+print FH<<EOF;
+*/
+EOF
+close(FH);
+
+############################################################################### 
+# Generate labels
+############################################################################### 
+
+open(FH,">  ../include/ipm_calls.h") || die 'Cannot open ../include/ipm_calls.h';
+print "Generating ../include/ipm_calls.h\n";
+print FH <<EOF;
+/*
+ * #####
+ * # IPM MPI labels and ids
+ * #####
+ *
+ * DO NOT EDIT: automatically generated at buildtime by make_wrappers
+ */
+
+EOF
+
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ printf FH "#define %-25s %-3d\n", $c->{idl},$c->{idv};
+}
+
+printf FH "#define IPM_LABEL_WRITE \\\n";
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ printf FH " sprintf(task.call_label[%d],\"%s\");\\\n" , $id, $c->{cfn};
+}
+printf FH ";\n";
+printf FH "\n";
+close(FH);
+
+###############################################################################
+# Generate ipm_fproto.h
+###############################################################################
+open(FH,">  ../include/ipm_fproto.h") || die 'Cannot open ../include/ipm_fproto.h';
+print "Generating ../include/ipm_fproto.h\n";
+
+$name_f=$FUNDERSCORE_PRE.mpi_pcontrol.$FUNDERSCORE_POST;
+print FH <<EOF;
+/*
+ * #####
+ * # Fortran Function Prototypes (not in mpif.h)
+ * #####
+ *
+ *
+ * DO NOT EDIT: automatically generated at buildtime by make_wrappers
+ */
+
+/* FUNDERSCORE_PRE  = "$FUNDERSCORE_PRE"  */
+/* FUNDERSCORE_POST = "$FUNDERSCORE_POST" */
+
+EOF
+
+
+if($WRAP_FORTRAN == 1) {
+
+print FH <<EOF;
+/* not in ipm_key */
+
+#define MPI_PCONTROL_F $name_f
+
+/*generated via ipm_key */
+
+EOF
+
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ $name_f=$c->{idl};
+ $name_f =~ s/_ID/_F/;
+ print FH <<EOF; 
+#define $name_f $c->{ffn}
+$c->{frv} ${FUNDERSCORE_PRE}$c->{ffn}($c->{fai});
+$c->{frv} ${FUNDERSCORE_PRE}p$c->{ffn}($c->{fai});
+EOF
+}
+
+
+}
+
+print FH<<EOF;
+
+/* end */
+EOF
+
+close(FH);
+
+################################################################################
+# Generate libtiny.c
+################################################################################
+open(FH,">  libtiny.c")  || die "Cannot open libtiny.c";
+print "Generating libtiny.c\n";
+
+print FH<<EOF;
+/*
+ * DO NOT EDIT: automatically generated at buildtime by make_wrappers
+ */
+
+static int mpi_rank=-1;
+static int inside_mpi=0,last_call=0;
+static char last_lang='C';
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <mpi.h>
+#include <ipm_fproto.h>
+#include <config.h>
+
+static struct timeval ipm_tod_tv;
+#define IPM_TIME_GTOD(tod)  {gettimeofday(&ipm_tod_tv,NULL); tod=ipm_tod_tv.tv_sec+1.0e-6*ipm_tod_tv.tv_usec;}
+
+char call_label[$ncalls][25] = {
+EOF
+foreach $id (sort numy keys %call) { $c = $call{$id};
+if($c->{idv} < $ncalls) {
+ print FH "\"$c->{cfn}\",\n";
+} else {
+ print FH "\"$c->{cfn}\"};\n\n";
+}
+}
+
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ printf FH "#define %-25s %-3d\n", $c->{idl},$c->{idv};
+}
+
+print FH<<EOF;
+
+
+EOF
+
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ 
+ print FH<<EOF;
+
+ /* ipm_key idl=$c->{idl} idv=$c->{idv} */
+ 
+ $c->{crv} $c->{cfn}($c->{cai}) {
+  static int rv,level=0,last_call_buf,i;
+  char last_lang_buf;
+  double stamp=-1;
+ /* by using a single buffer above last_call_buf we assume that no */
+ /* MPI_Call calls itself either directly or from another function */
+ /* such a recursive call of an MPI function seems unlikely:       */
+ /*								   */
+ /* not ok : MPI_Call1 --> MPI_Call2 --> MPI_Call1                 */
+ /*     ok : MPI_Call1 --> MPI_Call2 --> MPI_Call3 ..		   */  
+ 
+
+   IPM_TIME_GTOD(stamp); printf("%12.6f ",stamp);
+   if(inside_mpi > 0 ) {
+    for(i=0;i<inside_mpi;i++) { printf(" "); }
+    printf("rank %d enter %s (C) *** called from %s (%c) level = %d\\n",
+	 mpi_rank,
+ 	 "$c->{cfn}",
+ 	 call_label[last_call], last_lang,
+ 	 inside_mpi);
+   } else {
+    printf("rank %d enter %s (C) \\n", mpi_rank, "$c->{cfn}");
+   }
+ 
+   inside_mpi ++;
+   last_call_buf = last_call;
+   last_lang_buf = last_lang;
+   last_call = $c->{idv}-1;
+   last_lang = 'C';
+   rv=P$c->{cfn}($c->{car});
+   inside_mpi --;
+   last_call = last_call_buf;
+   last_lang = last_lang_buf;
+
+   if(mpi_rank < 0 ) PMPI_Comm_rank(MPI_COMM_WORLD,&mpi_rank);
+   IPM_TIME_GTOD(stamp); printf("%12.6f ", stamp);
+   if(inside_mpi > 0 ) {
+    printf("rank %d leave %s (C) *** called from %s (%c) level = %d\\n",
+ 	 mpi_rank,
+ 	 "$c->{cfn}",
+ 	 call_label[last_call], last_lang,
+ 	 inside_mpi);
+   } else {
+    printf("rank %d leave %s (C) \\n", mpi_rank, "$c->{cfn}");
+   }
+ 
+  return rv;
+ }
+
+
+$c->{frv} $c->{ffn}($c->{fai}) {
+  static int rv,level=0,last_call_buf,i;
+  char last_lang_buf;
+  double stamp=-1;
+ /* by using a single buffer above last_call_buf we assume that no */
+ /* MPI_Call calls itself either directly or from another function */
+ /* such a recursive call of an MPI function seems unlikely:       */
+ /*								   */
+ /* not ok : MPI_Call1 --> MPI_Call2 --> MPI_Call1                 */
+ /*     ok : MPI_Call1 --> MPI_Call2 --> MPI_Call3 ..		   */  
+ 
+
+   IPM_TIME_GTOD(stamp); printf("%12.6f ",stamp);
+   if(inside_mpi > 0 ) {
+    for(i=0;i<inside_mpi;i++) { printf(" "); }
+    printf("rank %d enter %s (F) *** called from %s (%c) level = %d\\n",
+	 mpi_rank,
+ 	 "$c->{ffn}",
+ 	 call_label[last_call], last_lang,
+ 	 inside_mpi);
+   } else {
+    printf("rank %d enter %s (F) \\n", mpi_rank, "$c->{ffn}");
+   }
+ 
+   inside_mpi ++;
+   last_call_buf = last_call;
+   last_lang_buf = last_lang;
+   last_call = $c->{idv}-1;
+   last_lang = 'F';
+   p$c->{ffn}($c->{far});
+   inside_mpi --;
+   last_call = last_call_buf;
+   last_lang = last_lang_buf;
+
+   if(mpi_rank < 0 ) PMPI_Comm_rank(MPI_COMM_WORLD,&mpi_rank);
+   IPM_TIME_GTOD(stamp); printf("%12.6f ",stamp);
+   if(inside_mpi > 0 ) {
+    printf("rank %d leave %s (F) *** called from %s (%c) level = %d\\n",
+ 	 mpi_rank,
+ 	 "$c->{ffn}",
+ 	 call_label[last_call], last_lang,
+ 	 inside_mpi);
+   } else {
+    printf("rank %d leave %s (F) \\n", mpi_rank, "$c->{ffn}");
+   }
+ 
+  return;
+ }
+
+EOF
+
+}
+close(FH);
+
+open(FH,">  libipm.c")  || die "Cannot open libipm.c";
+print "Generating libipm.c\n";
+print FH<<'EOF';
+/****************************/
+/* THIS IS OPEN SOURCE CODE */
+/*      SEE ../LICENSE      */
+/****************************/
+
+/*
+ * DO NOT EDIT: automatically generated at buildtime by make_wrappers
+ */
+
+/* 
+ * ######
+ * # Includes
+ * ######
+ */
+#include <mpi.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <ctype.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/utsname.h>
+#include <sys/types.h>
+#include <errno.h>
+#include <signal.h>
+
+#include <config.h>
+#include <ipm.h>
+#include <ipm_mpi.h>
+#include <ipm_fproto.h>
+#include <ipm_util.h>
+
+/* Jie Hacked for SR */
+#include <sr_check.h>
+
+/************private************************/
+struct ipm_jobdata job;
+struct ipm_taskdata task;
+struct ipm_pthread_data pthreads[MAXSIZE_NTHREADS];
+struct ipm_reportdata report;
+
+/******ephemeral data adjacent to above*****/
+double                          ipm_seconds_per_tick;
+
+static double			region_wtime_init;
+static double			region_utime_init;
+static double			region_stime_init;
+static double			stamp_current;
+static int			eventset_current;
+static MPI_Group		ipm_world_group;
+	/* slow */
+static int			*task_argc;
+static char			***task_argv;
+static double			ipm_mpi_threshold=0.00;
+static double			switch_bytes_tx_init=0.0;
+static double			switch_bytes_rx_init=0.0;
+static double			report_delta=-1;
+
+static int index_doubles(int n, int *idx, double *val);
+
+void ipm_mpi_init(void); 			/* IPM's MPI_Init */
+#ifndef IPM_DISABLE_DYNWRAP
+static void ipm_mpi_link(int call, char *lib);
+#endif
+static int  ipm_mpi_finalize(void); 		/* IPM's MPI_Finalize */
+static void ipm_mpi_interrupt(int signo);
+static void ipm_sync(void);
+
+
+#ifndef IPM_DISABLE_LOG
+static void ipm_log(void);
+int ipm_log_write(struct ipm_jobdata *j, struct ipm_taskdata *t, char *literal, void *fh, size_t buff_in, int pflag);
+int ipm_log_write_task(struct ipm_jobdata *j, struct ipm_taskdata *t, char *literal, FILE *fh);
+#endif
+static struct timeval tod_tv;
+struct flock 			ipm_fl = { F_WRLCK, SEEK_SET, 0,       0,     0 };
+static int ipm_hpm_test(int show_list);
+static int lock_test(void);
+
+#include "ipm_init.c"
+#include "ipm_finalize.c"
+
+/************************************************/
+
+
+
+/*
+ * #####
+ * # Prototypes for ipm hooks
+ * #####
+ */
+
+EOF
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ next if($c->{idl} =~ "MPI_INIT_ID");
+ next if($c->{idl} =~ "MPI_INIT_THREAD_ID");
+ next if($c->{idl} =~ "MPI_FINALIZE_ID");
+ print FH<<EOF;
+$c->{crv} (*ipm_$c->{cfn})($c->{cai});
+$c->{frv} (*ipm_$c->{ffn})($c->{fai});
+EOF
+}
+
+
+ print FH<<EOF;
+ /* prototypes for the $lib IPM variant */
+EOF
+ foreach $id (sort numy keys %call) { $c = $call{$id}; 
+ $name = "ipm_topo_";
+ print FH <<EOF;
+/*
+$c->{crv} $name$lib_$c->{cfn}($c->{cai});
+$c->{frv} $name$lib_$c->{ffn}($c->{fai});
+*/
+EOF
+ }
+
+print FH<<EOF;
+
+/*
+ * #####
+ * # New MPI entry points w/ hooks to ipm wrappers
+ * #####
+ */
+
+#ifndef IPM_DISABLE_DYNWRAP
+EOF
+
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ next if($c->{idl} =~ "MPI_INIT_ID");
+ next if($c->{idl} =~ "MPI_INIT_THREAD_ID");
+ next if($c->{idl} =~ "MPI_FINALIZE_ID");
+ print FH<<EOF;
+
+
+$c->{crv} $c->{cfn}($c->{cai}) {
+  int rv;
+
+#ifdef IPM_ENABLE_PROFLOW
+ callsite = IPM_GET_CALLSITE();
+#endif
+
+#ifdef DEVEL
+ if(task.flags & DEBUG) {
+  printf("IPM: %d in  C %s -> %p\\n", task.mpi_rank, "$c->{cfn}",ipm_$c->{cfn}); fflush(stdout);
+ }
+#endif
+
+  rv = ipm_$c->{cfn}($c->{car});
+
+
+#ifdef DEVEL
+ if(task.flags & DEBUG) {
+  printf("IPM: %d out C %s -> %p\\n", task.mpi_rank, "$c->{cfn}",ipm_$c->{cfn}); fflush(stdout);
+ }
+#endif
+
+  return rv;
+ }
+EOF
+if( ($c->{fai}=~/request/) || # this also matches requests
+        ($c->{fai}=~/indices/) ||
+        ($c->{fai}=~/statuses/) ) {
+
+        print FH "/* NOTE: $c->{ffn} NOT WRAPPED */\n";
+        print FH "\n";
+}
+else {
+print FH<<EOF;
+
+$c->{frv} $c->{ffn}($c->{fai}) {
+
+#ifdef IPM_ENABLE_PROFLOW
+ callsite = IPM_GET_CALLSITE();
+#endif
+
+#ifdef DEVEL
+ if(task.flags & DEBUG) {
+  printf("IPM: %d in  F %s -> %p\\n", task.mpi_rank, "$c->{ffn}",ipm_$c->{ffn}); fflush(stdout);
+ }
+#endif
+
+EOF
+$have_creq=0;
+if( $c->{f2c}=~/creq/ ) {
+    $have_creq=1;
+}
+$have_cstat=0;
+if( $c->{f2c}=~/cstat/ ) {
+    $have_cstat=1;
+}
+
+print FH<<EOF;
+
+#if $have_creq    /* HAVE _CREQ */ 
+  MPI_Request creq;
+#endif
+
+#if $have_cstat   /* HAVE _CSTAT */
+  MPI_Status  cstat;
+#endif
+
+
+  *info=$c->{cfn}($c->{f2c});
+
+#if $have_creq    /* HAVE _CREQ */ 
+  if( *info==MPI_SUCCESS )
+    *req=MPI_Request_c2f(creq);
+#endif
+
+#if $have_cstat   /* HAVE _CSTAT */
+  if (*info==MPI_SUCCESS)
+    MPI_Status_c2f(&cstat, status);
+#endif
+
+
+
+#ifdef DEVEL
+ if(task.flags & DEBUG) {
+  printf("IPM: %d out F %s -> %p\\n", task.mpi_rank, "$c->{ffn}",ipm_$c->{ffn}); fflush(stdout);
+ }
+#endif
+
+  return;
+ }
+
+
+EOF
+}
+}
+
+print FH<<EOF;
+#endif 
+
+/*
+ * #####
+ * # IPM API : code
+ * #####
+ */
+
+#include "ipm_mpi_interrupt.c"
+
+void ipm_mpi_init(void) {	 /* called once per execution */
+				 /* called from MPI_[Ii]nit */
+  char *env_ptr, *cp, *cptr1, *cptr2, *uptr, *uptr2;
+  int  i,j,k,initialized=0,sanity=0,mpi_init_rv=-1,rv;
+  IPM_TICK_TYPE T1,T2;
+  IPM_KEY_TYPE key;
+#ifndef IPM_DISABLE_UNAME
+  struct utsname mach_info;
+#endif
+#ifdef LINUX_BGL
+ BGLPersonality *person = NULL;
+#endif
+  FILE *fh;
+
+/*
+ IPM_TIME_GTOD(task.stamp_mpiinit_i);
+*/
+
+
+ /*******************************************/
+ /* initialize task.call_mask: bits          */
+ /*******************************************/
+
+EOF
+
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ print FH " task.call_mask[$c->{idv}] = ";
+ if($c->{rnk} eq "RANK_NONE") {
+  print FH "CALL_SEM_RANK_NONE |";
+ }
+ if($c->{dat} eq "DATA_NONE") {
+  print FH "CALL_SEM_DATA_NONE |";
+ }
+ print FH "0;\n"; 
+}
+
+
+print FH<<EOF;
+
+
+ /* signal(SIGINT,ipm_mpi_interrupt);    */
+ /* signal(SIGXCPU,ipm_mpi_interrupt);    */
+
+ sanity = 0;
+
+ /* in case PMPI_Init/pmpi_init calls other MPI calls we set MPI calls 
+    to pass through until after initialization is complete. 
+    mlwelcome@lbl.gov
+ */
+
+#ifndef IPM_DISABLE_DYNWRAP
+  for(i=1;i<=MAXSIZE_CALLS;i++) {
+    ipm_mpi_link(i,"pass");
+  } 
+#endif
+
+
+ /*      I   I PMP  MMM		*/
+ /*      II II P  P  M		*/
+ /*      I I I PPP   M		*/
+ /*      I   I P    MMM		*/
+
+ task.flags |= IPM_MPI_INITIALIZED; /* speculate and correct */
+#ifdef DEVEL
+ if(getenv("IPM_DEBUG")) {
+//  printf("IPM: %d pre_PMPI_Init(%d , %s, ...) lang=%s start \\n",
+//	 task.mpi_rank,
+//	 *task_argc,
+//	 **task_argv, 
+//	 task.mpi_lang);
+ }
+#endif
+
+ PMPI_Initialized(&initialized);
+
+ ipm_init(task.flags);
+ if(initialized) {
+  task.flags |= IPM_MPI_INITIALIZED;
+ PMPI_Comm_size(MPI_COMM_WORLD, &task.mpi_size); 
+ PMPI_Comm_rank(MPI_COMM_WORLD, &task.mpi_rank); 
+ PMPI_Comm_group(MPI_COMM_WORLD,&ipm_world_group);
+ } else { 
+  printf("IPM: %d ERROR MPI_Init failed \\n",task.mpi_rank); fflush(stdout);
+  task.flags &= ~IPM_MPI_INITIALIZED; /* correct */
+ }
+
+
+ if(task.flags & DEBUG) {
+  if(!task.mpi_rank) {
+   printf("IPM: %d build_id = %s \\n", task.mpi_rank, IPM_BUILD_ID);
+  }
+ }
+
+
+/*
+ * Setup pointers and ephemeral copies of local data 
+ */
+
+
+ if(task.flags & DEBUG && task.flags & IPM_MPI_INITIALIZED) {
+  printf("IPM: %d MPI_Init -> IPM_MPI_INITIALIZED\\n", task.mpi_rank);
+ }
+
+
+ if(task.flags & DEBUG) {
+  printf("IPM: %d LINK enter\\n", task.mpi_rank);
+  fflush(stdout);
+ }
+ 
+#ifndef IPM_DISABLE_DYNWRAP
+ if(!(task.flags & IPM_MPI_CANCELED)) {
+  for(i=1;i<=MAXSIZE_CALLS;i++) {
+
+   if(task.call_mask[i] & CALL_OPT_PASS) { 
+    ipm_mpi_link(i,"pass"); 
+   } else if(task.call_mask[i] & CALL_OPT_NOOP) { 
+    ipm_mpi_link(i,"noop"); 
+   } else {
+    ipm_mpi_link(i,"topo");
+   }
+  }
+ }
+#endif
+
+ if(task.flags & DEBUG) {
+  printf("IPM: %d LINK exit\\n", task.mpi_rank);
+  fflush(stdout);
+ }
+
+  sanity = 1;
+
+/*
+ * ###
+ * # Hook in the IPM calls 
+ * ###
+ */
+
+ if(!sanity) {
+  printf(\"IPM: ERROR could not initialize MPI wrappers\\n\");
+  exit(1);
+ }
+
+
+ if(task.flags & DEBUG) {
+  printf("IPM: %d jobdata_mem = %lld KB \\n", task.mpi_rank,
+	 (long long int)(size_t)(1.0*sizeof(struct ipm_jobdata))/1024);
+  printf("IPM: %d taskdata_mem = %lld KB \\n", task.mpi_rank,
+	 (long long int)(size_t)(1.0*sizeof(struct ipm_taskdata))/1024);
+  printf("IPM: %d hash_mem = %lld KB \\n", task.mpi_rank,
+	 (long long int)(size_t)((MAXSIZE_HASH+2)*sizeof(struct ipm_hash_ent))/1024);
+ }
+
+  IPM_TIME_BRACKET( IPM_HASH_CLEAR(task.hash));
+  if(task.flags & DEBUG) {
+   printf("IPM: %d hash_clear took %.3e seconds\\n",
+	task.mpi_rank,IPM_TIME_SEC(T2)-IPM_TIME_SEC(T1)); fflush(stdout);
+  }
+
+ for(i=0;i<MAXSIZE_REGION;i++) {
+  task.region_wtime[i] = 0.0;
+  task.region_count[i] = 0;
+ }
+
+
+ /******************************************************/
+ /* precompute everything possible before starting app */
+ /******************************************************/
+
+ /*******/
+ /* MPI */
+ /*******/
+
+
+ /********/
+ /* task */
+ /********/
+#ifndef LINUX_BGL
+ gethostname(task.hostname,MAXSIZE_HOSTNAME);
+ for(i=0;i<strlen(task.hostname);i++) {
+  if(task.hostname[i] == '.') { task.hostname[i] = 0; break; }
+ }
+ task.pid = getpid();
+ ipm_get_cmdline(task.mpi_cmdline, task.mpi_realpath);
+#endif
+
+#ifdef LINUX_BGL
+ /*
+  *
+  * BGL topoolgy -> bgpersonality data to define ring in Pset
+  *
+  */
+
+  person = (BGLPersonality*)malloc(sizeof(BGLPersonality));
+  rv = rts_get_personality(person,sizeof(BGLPersonality));
+  sprintf(task.hostname,"bgl-%lld-%lld",
+	 (long long int)person->psetNum,
+	 (long long int)person->NFSServer);
+#endif
+
+ ipm_get_switchname(task.switch_name);
+#ifndef POWER4
+ ipm_get_switchbytes(&switch_bytes_tx_init,&switch_bytes_rx_init);
+#endif
+
+
+ /*******/
+ /* job */
+ /*******/
+ IPM_CLEAR_JOBDATA(job);
+ task.stamp_init_global = task.stamp_init;
+ PMPI_Bcast(&task.stamp_init_global,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
+ sprintf(job.cookie,"%12.6f",task.stamp_init_global); 
+
+ ipm_get_jobdata(job.id, job.username, job.groupname);
+ job.ntasks = task.mpi_size; 
+
+
+ /***********/
+ /* machine */
+ /***********/
+
+ IPM_TIME_BRACKET(
+  ipm_get_machtopo();
+ );
+ if(task.flags & DEBUG) {
+  printf("IPM: %d ipm_mpi_init mach_topo delta=%.3e\\n",
+	task.mpi_rank,
+	IPM_TIME_SEC(T2) - IPM_TIME_SEC(T1)); fflush(stdout);
+ }
+
+ 
+#ifndef IPM_DISABLE_UNAME
+ uname(&mach_info);
+ sprintf(task.mach_info, "%s_%s", mach_info.machine, mach_info.sysname);
+#else 
+ sprintf(task.mach_info,"IPM_DISABLE_UNAME");
+#endif
+ 
+
+
+/*
+ * ###
+ * # Start HPM counters
+ * ###
+ */
+
+ if(!(task.flags & IPM_HPM_CANCELED)) {
+  ipm_hpm_start();
+ }
+ ipm_region(1,"ipm_noregion");
+
+ if(task.flags & DEBUG) {
+  printf("IPM: %d ipm_mpi_init leave rv=\%d\\n",task.mpi_rank,mpi_init_rv);
+  fflush(stdout);
+ }
+
+/*
+ IPM_TIME_GTOD(task.stamp_mpiinit_o);
+*/
+
+ task.flags &= ~IPM_MPI_INSIDE;
+ return;
+}
+
+/*
+ * ################################################################
+ * # IPM wrapper library invariants
+ * ################################################################
+ */
+
+#include "ipm_mpi_init.c"
+#include "ipm_mpi_finalize.c"
+#include "ipm_mpi_pcontrol.c"
+
+/*
+ * ################################################################
+ * # Jie's PBS Suspend and Resume Check
+ * ################################################################
+ */
+
+#include "sr_check.c"
+
+/*
+ * ################################################################
+ * # Jie's IPM Checkpoint support
+ * ################################################################
+ */
+
+#include "ipm_checkpoints.c"
+
+/*
+ * ################################################################
+ * # Jie's IPM PBS share support
+ * ################################################################
+ */
+
+#include "ipm_external.c"
+
+
+/*
+ * ################################################################
+ * #   ipm wrapper library variants				  #
+ * ################################################################
+ */
+
+EOF
+
+
+print FH<<EOF;
+
+/*
+ * ###
+ * # Topology library  (count, rank, time, bytes)
+ * ###
+ */
+
+EOF
+
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ next if($c->{idl} =~ "MPI_INIT_ID");
+ next if($c->{idl} =~ "MPI_INIT_THREAD_ID");
+ next if($c->{idl} =~ "MPI_FINALIZE_ID");
+ 
+ print FH<<EOF;
+
+/* ipm_key idl=$c->{idl} idv=$c->{idv} */
+
+/* C */
+
+#ifndef IPM_DISABLE_DYNWRAP
+$c->{crv} ipm_topo_$c->{cfn}($c->{cai}) {
+#else
+$c->{crv} $c->{cfn}($c->{cai}) {
+#endif
+ static int rv;
+ static double t1,t2,iwall;
+ static IPM_TICK_TYPE T1,T2;
+#ifdef DEVEL
+ static IPM_TICK_TYPE TI1,TI2;
+ static double ti1,ti2;
+#endif
+ static IPM_KEY_TYPE key,hkey;
+ static int ntypes,ibytes=0,iirank=0,irank=0,isize,isite;
+ static MPI_Group igroup;
+
+#ifdef DEVEL
+ IPM_TIME_GET(TI1);
+#endif
+
+#ifndef IPM_DISABLE_IDEMPOTENTCY
+ static int ipm_entry=0;
+
+ if(task.flags & IPM_MPI_INSIDE) {
+#ifdef DEVEL
+ if(task.flags & DEBUG) {
+  printf("IPM: %d %s called from some MPI call, passing to P%s \\n",
+	 task.mpi_rank, task.call_label[$c->{idv}], task.call_label[$c->{idv}]);
+ }
+#endif
+  rv=P$c->{cfn}($c->{car});
+  return rv;
+ } else {
+  task.flags |= IPM_MPI_INSIDE;
+  ipm_entry = 1;
+ }
+#endif
+
+#ifdef IPM_DISABLE_DYNWRAP
+ /* { MASKING */
+ if(task.call_mask[$c->{idv}] & CALL_OPT_NOOP) {
+#ifdef DEVEL
+ if(task.flags & DEBUG) {
+  printf("IPM: %d C %s called but masked(NOOP) , returning MPI_SUCCESS\\n",
+	 task.mpi_rank, task.call_label[$c->{idv}], task.call_label[$c->{idv}]);
+ }
+#endif
+   return MPI_SUCCESS;
+ }
+
+ if(task.call_mask[$c->{idv}] & CALL_OPT_PASS) {
+#ifdef DEVEL
+ if(task.flags & DEBUG) {
+  printf("IPM: %d C %s called but masked(PASS) , passing to P%s \\n",
+	 task.mpi_rank, task.call_label[$c->{idv}], task.call_label[$c->{idv}]);
+ }
+#endif
+   rv=P$c->{cfn}($c->{car});
+   return rv;
+ }
+ /* } MASKING */
+#endif
+
+
+ IPM_TIME_GET(T1);
+
+ rv=P$c->{cfn}($c->{car});
+
+ IPM_TIME_GET(T2);
+ IPM_TIME_OVERFLOW_CHECK(T1,T2);
+ t1 = IPM_TIME_SEC(T1);
+ t2 = IPM_TIME_SEC(T2);
+ IPM_TIME_RESOLUTION_CHECK(t1,t2);
+
+#ifdef DEVEL
+ if(t2<=t1) {
+ printf("IPM: %d TIMER_ERR C %s t2 %.6e t1 %.6e %d %d %d\\n",
+         task.mpi_rank,
+         task.call_label[KEY_CALL(key)],
+	 t2,t1,
+         KEY_RANK(key),
+         KEY_BYTE(key),
+         KEY_REGION(key));
+ 
+ }
+#endif
+
+EOF
+
+print FH<<EOF;
+ IPM_MPI_$c->{byt}_C;
+ IPM_MPI_$c->{rnk}_C;
+EOF
+
+ unless($c->{com} =~ /COMM_NONE/) {
+print FH<<EOF;
+ IPM_MPI_GETGLOBALRANK_C;
+EOF
+ }
+
+ if(0 && $c->{idl} =~ "MPI_WAITANY_ID") {
+print FH<<EOF;
+ printf("$c->{idl} C %d   %d %d %d   %d %d %d %d %d\\n",
+	task.mpi_rank,
+        status->source,
+        status->tag,
+        status->error,
+        status->val1,
+        status->val2,
+        status->val3,
+        status->val4,
+        status->val5);
+EOF
+}
+
+#if(1 || $c->{idl} =~ "MPI_WAITALL_ID" || $c->{idl} =~ "MPI_WAITSOME_ID") {
+#print FH<<EOF;
+# IPM_MPI_SANITY("C", key, task.region_current,$c->{idv},irank,ibytes);
+#EOF
+#}
+# incase garbage comes back from mpi
+if($c->{cfn} =~ "MPI_Wait") {
+print FH<<EOF;
+ if (irank < 0 | irank >task.mpi_size ) irank=task.mpi_rank;
+EOF
+}
+
+print FH<<EOF;
+
+
+ /* Jie's new hack to reduce number of bins by rounding ibyte size */
+     
+  if (IPM_ROUNDED == 1) {
+    if(ibytes != 0) {
+	ibytes--;
+	ibytes |= ibytes >> 1;
+	ibytes |= ibytes >> 2;
+	ibytes |= ibytes >> 4;
+	ibytes |= ibytes >> 8;
+	ibytes |= ibytes >> 16;
+	ibytes++;
+    }
+  }
+
+ /***** end Jie's Hack for reduce bins*************/
+
+
+/* Jie's hack for checkpoint */
+ int ret=0;
+ ret = ipm_mpi_checkpoint(); 
+/****** end of Jie's hack *****/
+
+/* Jie's hack for PBS mmap share */
+ ret=0;
+ ret = ipm_external_entry(); 
+/****** end of Jie's hack *****/
+
+ /* Jie Hacked here to calculate the adjust duration and sr_duration */
+ double adj_dur = 0.0f, sr_dur=0.0f;
+ ret = 0;
+ ret = duration_adjust(t1, t2, &adj_dur, &sr_dur, RDTSC_IN_USE);
+ /***** end Jie's Hack**********************************/
+
+ task.hash_nlog++;
+ IPM_MPI_KEY(key,task.region_current,$c->{idv},irank,ibytes);
+ IPM_HASH_HKEY(task.hash,key,hkey);
+ task.hash[hkey].count ++;
+
+ /* Jie Hacked here to apply the sr duration in to stats */
+ if (ret == 0) {
+    /* first case: elapsed time for MPI calls is <= ADJ_THRESHOLD
+     * no sr_check is happened. */
+
+     task.hash[hkey].t_tot += (t2-t1);
+    if(t2-t1 > task.hash[hkey].t_max) task.hash[hkey].t_max = (t2-t1);
+    if(t2-t1 < task.hash[hkey].t_min) task.hash[hkey].t_min = (t2-t1);
+    
+ } else if (ret == -1) {
+    /* second case: elapsed time for MPI calls is > ADJ_THRESHOLD 
+     * sr_check is happened, but adj_dur < ADJ_THRESHOLD, 
+     * t_tot updated by average time, t_max and t_min 
+     * is not touched. */
+
+     if( (task.hash[hkey].count-1) > 0 ) { /* commented this out, seem something wrong with it */
+	 task.hash[hkey].t_tot += task.hash[hkey].t_tot / (task.hash[hkey].count-1);
+     }
+ } else if (ret == 1) {
+    /* last case: elapsed time for MPI calls is > ADJ_THRESHOLD
+     * sr_check is happened, adj_dur > ADJ_THRESHOLD
+     * t_tot, t_max, t_min can all be updated. */
+     //assert(t2-t1>=adj_dur);
+     task.hash[hkey].t_tot += (t2-t1-sr_dur);
+    if(t2-t1-sr_dur > task.hash[hkey].t_max) task.hash[hkey].t_max = (t2-t1-sr_dur);
+    if(t2-t1-sr_dur < task.hash[hkey].t_min) task.hash[hkey].t_min = (t2-t1-sr_dur);    
+
+ }
+
+ /********** end of Jie's Hack *************************************/
+
+
+/* IPM_LOG_MPIEVENT(task.region_current,$c->{idv},irank,ibytes,t2-t1); */
+
+#ifndef IPM_DISABLE_LOG
+ if((task.flags & IPM_TRC_ACTIVE) &&
+    (task.call_mask[$c->{idv}] & CALL_OPT_TRACE)) {
+  ipm_trace(key,t1);
+  ipm_trace(key,t2);
+ }
+#endif
+
+#ifdef IPM_ENABLE_PROFLOW
+ key_last = key;
+#endif
+
+#ifndef IPM_DISABLE_IDEMPOTENTCY
+ if((task.flags & IPM_MPI_INSIDE) && ipm_entry) {
+  ipm_entry = 0;
+  task.flags &= ~IPM_MPI_INSIDE;
+ }
+#endif
+
+#ifdef DEVEL
+ IPM_TIME_GET(TI2);
+ IPM_TIME_OVERFLOW_CHECK(TI1,TI2); /* will never overflow actually */
+ ti1 = IPM_TIME_SEC(TI1);
+ ti2 = IPM_TIME_SEC(TI2);
+ IPM_TIME_RESOLUTION_CHECK(ti1,ti2); 
+ printf("IPM: %d OHEAD %s %.6e %.6e %d %d %d\\n",
+         task.mpi_rank,
+         task.call_label[KEY_CALL(key)],
+	 ti2-ti1 - (t1-t2), t2-t1,
+         KEY_RANK(key),
+         KEY_BYTE(key),
+         KEY_REGION(key));
+#endif
+
+ 
+ return rv;
+
+#ifdef IPM_DISABLE_DYNWRAP
+}
+#else 
+} 
+#endif
+
+EOF
+
+if($WRAP_FORTRAN == 100) {
+
+print FH<<EOF;
+
+/* F make sure this stays in sync with the C version above */
+
+#ifndef IPM_DISABLE_DYNWRAP
+$c->{frv} ipm_topo_$c->{ffn}($c->{fai}) {
+#else
+$c->{frv} $c->{ffn}($c->{fai}) {
+#endif
+ static IPM_TICK_TYPE T1,T2;
+ static IPM_KEY_TYPE key,hkey;
+ static int ntypes,ibytes=0,iirank=0,irank=0,isize,isite;
+ static MPI_Group igroup;
+ static double t1,t2,iwall;
+
+
+#ifndef IPM_DISABLE_IDEMPOTENTCY
+ static int ipm_entry=0;
+
+ if(task.flags & IPM_MPI_INSIDE) {
+EOF
+  print FH $FUNDERSCORE_PRE."p"."$c->{ffn}($c->{far});\n";
+print FH<<EOF;
+  return;
+ } else {
+  task.flags |= IPM_MPI_INSIDE;
+  ipm_entry = 1;
+ }
+#endif
+
+#ifdef IPM_DISABLE_DYNWRAP
+ /* { MASKING */
+ if(task.call_mask[$c->{idv}] & CALL_OPT_NOOP ) {
+#ifdef DEVEL
+ if(task.flags & DEBUG) {
+  printf("IPM: %d F %s called but masked(NOOP) , returning MPI_SUCCESS\\n",
+	 task.mpi_rank, task.call_label[$c->{idv}], task.call_label[$c->{idv}]);
+ }
+#endif
+   *info = MPI_SUCCESS;
+ }
+
+ if(task.call_mask[$c->{idv}] & CALL_OPT_PASS) {
+#ifdef DEVEL
+ if(task.flags & DEBUG) {
+  printf("IPM: %d F %s called but masked(PASS) , passing to p%s \\n",
+	 task.mpi_rank, task.call_label[$c->{idv}], task.call_label[$c->{idv}]);
+ }
+#endif
+EOF
+   print FH $FUNDERSCORE_PRE."p"."$c->{ffn}($c->{far});\n";
+print FH<<EOF;
+ }
+ /* } MASKING */
+#endif
+
+
+ IPM_TIME_GET(T1);
+EOF
+ print FH $FUNDERSCORE_PRE."p"."$c->{ffn}($c->{far});\n";
+print FH<<EOF;
+ IPM_TIME_GET(T2);
+ IPM_TIME_OVERFLOW_CHECK(T1,T2);
+ t1 = IPM_TIME_SEC(T1);
+ t2 = IPM_TIME_SEC(T2);
+ IPM_TIME_RESOLUTION_CHECK(t1,t2); 
+
+#ifdef DEVEL
+ if(t2<=t1) {
+ printf("IPM: %d TIMER_ERR F %s t2 %.6e t1 %.6e %d %d %d\\n",
+         task.mpi_rank,
+         task.call_label[KEY_CALL(key)],
+	 t2,t1,
+         KEY_RANK(key),
+         KEY_BYTE(key),
+         KEY_REGION(key));
+ 
+ }
+#endif
+
+EOF
+                                             
+print FH<<EOF;
+ IPM_MPI_$c->{byt}_F;
+ IPM_MPI_$c->{rnk}_F;
+EOF
+
+ unless($c->{com} =~ /COMM_NONE/) {
+print FH<<EOF;
+ IPM_MPI_GETGLOBALRANK_F;
+EOF
+ }
+
+
+ if(0 && $c->{idl} =~ "MPI_WAITANY_ID") {
+print FH<<EOF;
+ printf("$c->{idl} C %d   %d %d %d   %d %d %d %d %d\\n",
+	task.mpi_rank,
+        status->source,
+        status->tag,
+        status->error,
+        status->val1,
+        status->val2,
+        status->val3,
+        status->val4,
+        status->val5);
+EOF
+}
+
+ if(1 || $c->{idl} =~ "MPI_WAITALL_ID" || $c->{idl} =~ "MPI_WAITSOME_ID") {
+print FH<<EOF;
+ IPM_MPI_SANITY("F", key, task.region_current,$c->{idv},irank,ibytes);
+EOF
+ }
+# incase garbage comes back from mpi
+if($c->{cfn} =~ "MPI_Wait") {
+print FH<<EOF;
+ if (irank < 0 | irank >task.mpi_size ) irank=task.mpi_rank;
+EOF
+}
+
+print FH<<EOF;
+
+IPM_LOG_MPIEVENT(task.region_current,$c->{idv},irank,ibytes,t2-t1);
+
+#ifndef IPM_DISABLE_LOG
+ if((task.flags & IPM_TRC_ACTIVE) &&
+    (task.call_mask[$c->{idv}] & CALL_OPT_TRACE)) {
+  ipm_trace(key,t1);
+  ipm_trace(key,t2);
+ }
+#endif
+
+#ifdef IPM_ENABLE_PROFLOW
+ key_last = key;
+#endif
+
+#ifndef IPM_DISABLE_IDEMPOTENTCY
+ if((task.flags & IPM_MPI_INSIDE) && ipm_entry) {
+  ipm_entry = 0;
+  task.flags &= ~IPM_MPI_INSIDE;
+ }
+#endif
+
+#ifdef IPM_DISABLE_DYNWRAP
+}
+#else 
+}
+#endif
+
+EOF
+
+}
+
+} # perl loop
+
+
+print FH<<EOF;
+
+/*
+ * ###
+ * # noop library
+ * ###
+ */
+
+EOF
+
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ next if($c->{idl} =~ "MPI_INIT_ID");
+ next if($c->{idl} =~ "MPI_INIT_THREAD_ID");
+ next if($c->{idl} =~ "MPI_FINALIZE_ID");
+ 
+ print FH<<EOF;
+
+/* ipm_key idl=$c->{idl} idv=$c->{idv} */
+
+/* C */
+
+#ifndef IPM_DISABLE_DYNWRAP
+$c->{crv} ipm_noop_$c->{cfn}($c->{cai}) {
+   return MPI_SUCCESS;
+ }
+
+/* F make sure this stays in sync with the C version above */
+
+$c->{frv} ipm_noop_$c->{ffn}($c->{fai}) {
+   *info = MPI_SUCCESS;
+   return;
+}
+#endif
+/* end ifndef IPM_DISABLE_DYNWRAP */
+
+EOF
+
+}
+
+print FH<<EOF;
+
+#include "ipm_api.c"
+
+#ifndef IPM_DISABLE_LOG
+#include "ipm_trace.c"
+#endif
+
+
+/*
+ * #####
+ * # Hook in the IPM calls : first globally, then check for exceptions
+ * #####
+ */
+
+#ifndef IPM_DISABLE_DYNWRAP
+static void ipm_mpi_link(int call, char *lib) {
+ 
+#ifdef DEVEL
+  if(task.flags & DEBUG) {
+   printf("IPM: %d mapping %s --> %s\\n", task.mpi_rank,
+   task.call_label[call],lib);
+  }
+#endif
+
+
+  if(!strcmp(lib,"topo")) {
+EOF
+ $name = "ipm_topo_";
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ next if($c->{idl} =~ "MPI_INIT_ID");
+ next if($c->{idl} =~ "MPI_INIT_THREAD_ID");
+ next if($c->{idl} =~ "MPI_FINALIZE_ID");
+ print FH<<EOF;
+ if(call == $id) {
+  ipm_$c->{cfn} = &$name$c->{cfn};
+#ifdef DEVEL
+  if(task.flags & DEBUG) {
+   printf(\"IPM: %d mapping (C) %s(%p) --> %s(%p)\\n\", task.mpi_rank,
+   \"$c->{cfn}\",$c->{cfn}, \"$name$c->{cfn}\",&$name$c->{cfn});
+  }
+#endif
+
+EOF
+ if($WRAP_FORTRAN == 100) {
+ print FH<<EOF;
+  ipm_$c->{ffn} = &$name$c->{ffn};
+#ifdef DEVEL
+  if(task.flags & DEBUG) {
+   printf(\"IPM: %d mapping (F) %s(%p) --> %s(%p)\\n\", task.mpi_rank,
+   \"$c->{ffn}\",$c->{ffn}, \"$name$c->{ffn}\",&$name$c->{ffn});
+  }
+#endif
+
+EOF
+ }
+print FH<<EOF;
+}
+EOF
+}
+ 
+print FH<<EOF;
+   
+  }
+
+  if(!strcmp(lib,"pass")) {
+EOF
+ $name = "P";
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ next if($c->{idl} =~ "MPI_INIT_ID");
+ next if($c->{idl} =~ "MPI_INIT_THREAD_ID");
+ next if($c->{idl} =~ "MPI_FINALIZE_ID");
+ print FH<<EOF;
+ if(call == $id) {
+  ipm_$c->{cfn} = &P$c->{cfn};
+  if(task.flags & DEBUG) {
+   printf(\"IPM: %d mapping (C) %s(%p) --> %s(%p)\\n\", task.mpi_rank,
+   \"$c->{cfn}\",$c->{cfn}, \"$name$c->{cfn}\",&P$c->{cfn});
+  }
+EOF
+ if($WRAP_FORTRAN == 100) {
+ print FH<<EOF;
+  ipm_$c->{ffn} = &${FUNDERSCORE_PRE}p$c->{ffn};
+  if(task.flags & DEBUG) {
+   printf(\"IPM: %d mapping (F) %s(%p) --> %s(%p)\\n\", task.mpi_rank,
+   \"$c->{ffn}\",$c->{ffn}, \"$name$c->{ffn}\",&${FUNDERSCORE_PRE}p$c->{ffn});
+  }
+EOF
+}
+print FH<<EOF;
+ }
+EOF
+}
+ 
+print FH<<EOF;
+   
+  }
+
+  if(!strcmp(lib,"noop")) {
+EOF
+ $name = "ipm_noop_";
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ next if($c->{idl} =~ "MPI_INIT_ID");
+ next if($c->{idl} =~ "MPI_INIT_THREAD_ID");
+ next if($c->{idl} =~ "MPI_FINALIZE_ID");
+ print FH<<EOF;
+ if(call == $id) {
+  ipm_$c->{cfn} = &$name$c->{cfn};
+  if(task.flags & DEBUG) {
+   printf(\"IPM: %d mapping (C) %s(%p) --> %s(noop)\\n\", task.mpi_rank,
+   \"$c->{cfn}\",$c->{cfn}, \"$name$c->{cfn}\");
+  }
+EOF
+ if($WRAP_FORTRAN == 1) {
+ print FH<<EOF;
+  ipm_$c->{ffn} = &$name$c->{ffn};
+  if(task.flags & DEBUG) {
+   printf(\"IPM: %d mapping (F) %s(%p) --> %s(noop)\\n\", task.mpi_rank,
+   \"$c->{ffn}\",$c->{ffn}, \"$name$c->{ffn}\");
+  }
+EOF
+ }
+print FH<<EOF;
+ }
+EOF
+}
+ 
+print FH<<EOF;
+   
+  }
+
+  return;
+}
+#endif
+
+/*
+** Misc MPI standins
+*/
+
+/*
+**
+** Break Waits: replace collective waits with singleton waits
+**
+** MPI_Waitall 
+*/
+
+/*
+ipm_breakw_mpi_waitall(int num, MPI_Request *req, MPI_Status *status) {
+ int i,irv,rv; 
+ MPI_Request *ireq;
+ MPI_Status *istatus;
+
+ for(i=0;i<num;i++) {
+  MPI_Waitany(int num-i, MPI_Request *req, int *indx, MPI_Status *status);
+  maybe use MPI_Testany?
+ }
+ return 
+}
+*/
+
+#include "ipm_env.c"
+
+#ifndef IPM_DISABLE_LOG
+#include "ipm_mpi_log.c"
+#include "ipm_log_write.c"
+#endif
+
+#include "ipm_mpi_report.c"
+
+#include "ipm_hpm.c"
+#include "ipm_hpm_test.c"
+#include "ipm_memusage.c"
+#include "ipm_execinfo.c"
+#include "ipm_jobinfo.c"
+#include "ipm_switchinfo.c"
+#include "ipm_mpi_machtopo.c"
+#include "ipm_util.c"
+EOF
+if($WRAP_FORTRAN == 1) {
+print FH<<EOF;
+#include "ipm_fortran.c"
+EOF
+}
+
+################################################################################
+# Generate libipm_io.c
+################################################################################
+%call = ();
+%tag = ();
+open(FH,"< $IPM_KEYFILE")  || die "Cannot open $IPM_KEYFILE";
+while(defined($line = <FH>)) {
+ next if($line !~ /\|LIBC_/);
+ chomp($line);
+ @v = split('\|',$line);
+ $id = $v[0];
+ @u = split('\,',$v[4]);
+ $call{$id} = {
+  idv => "$v[0]",
+  idl => "$v[1]",
+  cpt => "$v[2]",
+  fmt => "$v[3]",
+  sem => "$u[0]",
+  dat => "$u[1]",
+  byt => "$u[2]"};
+ $_ = $call{$id}->{cpt};
+ /(.*) (.*)\((.*)\)/;
+ $call{$id}{crv} = $1;
+ $call{$id}{lab} = $2;
+ $call{$id}{cfn} = $2;
+ $call{$id}{cai} = $3;
+ $call{$id}{car} = $3;
+ $call{$id}{car} =~ s/\(//;
+ $call{$id}{car} =~ s/\)//;
+ $call{$id}{car} =~ s/const char \*//g;
+ $call{$id}{car} =~ s/const void \*//g;
+ $call{$id}{car} =~ s/void \*//g;
+ $call{$id}{car} =~ s/void//g;
+ $call{$id}{car} =~ s/size_t//g;
+ $call{$id}{car} =~ s/off_t//g;
+ $call{$id}{car} =~ s/mode_t//g;
+ $call{$id}{car} =~ s/int \*//g;
+ $call{$id}{car} =~ s/char \*\*\*//g;
+ $call{$id}{car} =~ s/int //g;
+ $call{$id}{car} =~ s/ //g;
+ 
+}
+close(FH);
+
+
+print "Generating libipm_io.c\n";
+open(FH,">  libipm_io.c")  || die "Cannot open libipm_io.c";
+print FH<<EOF;
+/*
+ * Posix I/O wrappers
+ *
+ * DO NOT EDIT: automatically generated at buildtime by make_wrappers
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/utsname.h>
+#include <sys/types.h>
+#include <sys/signal.h>
+#include <sys/wait.h>
+#include <string.h>
+#include <errno.h>
+
+#ifdef MPI
+#include <mpi.h>
+#endif
+
+#include <ipm.h>
+#include <ipm_io.h>
+#include <ipm_util.h>
+
+#define GNU_SOURCE
+#include <dlfcn.h>
+
+#ifndef RTLD_NEXT
+#define RTLD_NEXT ((void *) -1l)
+#endif
+
+#define IPM_LIBPC_INITIALIZED           (0x0000000000000001ULL <<  1)
+#define IPM_LIBPC_FINALIZING            (0x0000000000000001ULL <<  2)
+#define IPM_LIBPC_ACTIVE                (0x0000000000000001ULL <<  3)
+#define IPM_TRC_MEM                     (0x0000000000000001ULL <<  5)
+#define IPM_TRC_IO                      (0x0000000000000001ULL <<  6)
+
+static unsigned long long int flags=0;
+static double stamp_io_start, stamp_io_stop, time_io_start;
+static char *char_error;
+static void libPc_init(void);
+static void libPc_finalize(void);
+static void libPc_finalize_sig(int sig);
+static void libPc_clear(void);
+static void libPc_report(void);
+static int libPc_signal_caught;
+
+#ifdef IPM_LIBPC_PROFILE
+#ifdef IPM_LIBPC_PRIVATE
+struct ipm_jobdata job;
+struct ipm_taskdata task;
+struct ipm_reportdata rep;
+#include "ipm_util.c"
+#else 
+extern struct ipm_jobdata job;
+extern struct ipm_taskdata task;
+extern struct ipm_reportdata rep;
+#endifort
+#else 
+static struct ipm_taskdata task;
+#endif
+
+/* p-shifted prototypes */
+EOF
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ printf FH "static $c->{crv} (*P%s)()=NULL;\n", $c->{cfn};
+}
+
+print FH<<EOF;
+
+/* startup and shudown routines */
+
+void libPc_init(void) {
+ int i,j,k;
+ char *envptr;
+ struct sigaction sigact;
+ IPM_TICK_TYPE T1,T2;
+
+ flags &= ~IPM_LIBPC_ACTIVE;
+ libPc_clear();
+#ifdef IPM_LIBPC_PROFILE
+#ifdef IPM_LIBPC_PRIVATE
+ IPM_CLEAR_TASKDATA(task);
+ IPM_TIME_BRACKET( IPM_HASH_CLEAR(task.hash));
+ if(task.flags & DEBUG) {
+  printf("IPM: %d hash_clear took %.3e seconds\\n",
+       task.mpi_rank,IPM_TIME_SEC(T2)-IPM_TIME_SEC(T1)); fflush(stdout);
+ }
+#endif
+#else 
+ IPM_CLEAR_TASKDATA(task);
+ IPM_TIME_BRACKET( IPM_HASH_CLEAR(task.hash));
+ if(task.flags & DEBUG) {
+  printf("IPM: %d hash_clear took %.3e seconds\\n",
+       task.mpi_rank,IPM_TIME_SEC(T2)-IPM_TIME_SEC(T1)); fflush(stdout);
+ }
+#ifdef MPI
+ PMPI_Initialized(&i);
+ if(i) { 
+  flags |= IPM_MPI_INITIALIZED;
+  PMPI_Comm_rank(MPI_COMM_WORLD,&task.mpi_rank);
+ } else {
+  task.mpi_rank = -1;
+ }
+#endif
+#endif
+
+
+ IPM_TIME_GET(T1);
+ time_io_start = IPM_TIME_SEC(T1);
+ IPM_TIME_GTOD(stamp_io_start);
+
+ getenv("IPM_DEBUG");
+ if(envptr) {
+  flags |= DEBUG;
+ }
+ getenv("IPM_TRACE_MEM");
+ if(envptr) {
+  flags |= IPM_TRC_MEM;
+ }
+
+ getenv("IPM_TRC_IO");
+ if(envptr) {
+  flags |= IPM_TRC_IO;
+ }
+
+ if(!(flags & IPM_MPI_INITIALIZED)) {
+/*
+  if ( atexit( libPc_finalize ) != 0 )
+   fprintf(stderr, "Warning: can't register exit function cleanup()\\n" );
+
+  sigact.sa_handler = libPc_finalize_sig;
+  sigact.sa_flags = 0;
+
+  if ( sigemptyset( &sigact.sa_mask ) == -1 ) {
+     fprintf( stderr, "Error: cannot clear interrupt handler: %s\\n",
+              strerror( errno ));
+     exit( -1 );
+  }
+
+  if ( sigaction( SIGINT, &sigact, NULL ) == -1 ) {
+     fprintf( stderr, "Warning: cannot install interrupt handler: %s\\n",
+               strerror( errno ));
+  }
+
+*/
+
+/*
+  if ( sigaction( SIGTERM, &sigact, NULL ) == -1 ) {
+   fprintf( stderr, "Warning: cannot install timeout handler: %s\\n",
+               strerror( errno ));
+   }
+*/
+  }
+
+EOF
+foreach $id (sort numy keys %call) { $c = $call{$id};
+print FH<<EOF;
+ if(!P$c->{cfn}) {
+  *(void **) (&P$c->{cfn}) = dlsym(RTLD_NEXT, "$c->{cfn}");
+  if ((char_error = dlerror()) != NULL)  {
+   fprintf (stderr, "$c->{cfn} %12.12s\\n", char_error);
+   exit(1);
+  }
+ }
+
+EOF
+}
+print FH<<EOF;
+
+
+ flags |= IPM_LIBPC_ACTIVE;
+ flags |= IPM_LIBPC_INITIALIZED;
+}
+
+void libPc_finalize_sig(int sig) {
+ flags &= ~IPM_LIBPC_ACTIVE;
+ libPc_signal_caught = sig;
+ if(flags & DEBUG) {
+  printf("IPM: libPc_finalize_sig enter\\n"); fflush(stdout);
+ }
+ libPc_finalize();
+ if(flags & DEBUG) {
+  printf("IPM: libPc_finalize_sig exit\\n"); fflush(stdout);
+ }
+}
+
+void libPc_finalize(void) {
+ flags &= ~IPM_LIBPC_ACTIVE;
+ flags |= IPM_LIBPC_FINALIZING;
+
+ if(flags & DEBUG) {
+  printf("IPM: libPc_finalize enter\\n"); fflush(stdout);
+ }
+
+ IPM_TIME_GTOD(stamp_io_stop);
+
+#ifdef IPM_LIBPC_PROFILE
+ libPc_report();
+#endif
+
+ if(flags & DEBUG) {
+  printf("IPM: libPc_finalize exit %lld\\n", flags); fflush(stdout);
+ }
+/*
+ exit(libPc_signal_caught); 
+*/
+}
+
+void libPc_report(void) {
+ int i;
+ static nrep=0;
+ unsigned long long int buff_size=1;
+
+ flags &= ~IPM_LIBPC_ACTIVE;
+
+ nrep ++;
+ if(flags & DEBUG) {
+  printf("IPM: libPc_report enter %d\\n", nrep); fflush(stdout);
+ }
+
+ if(flags & DEBUG) {
+  printf("IPM: libPc_report exit %d\\n", nrep); fflush(stdout);
+ }
+
+ flags |= IPM_LIBPC_ACTIVE;
+}
+
+static void libPc_clear(void) {
+ int i;
+ flags &= ~IPM_LIBPC_ACTIVE;
+
+}
+
+
+EOF
+
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ 
+ if($c->{crv} =~ /^void$/) {
+  $rvd = ""; $rva=""; $rrv="return;";
+ } else {
+  $rvd = "$c->{crv} rv;"; $rva="rv ="; $rrv="return rv;";
+ }
+
+ if($c->{crv} =~ /^void$/) { $rvfmt ="void "; $rvfarg =""; }
+ if($c->{crv} =~ /^int$/) { $rvfmt ="%d"; $rvfarg ="rv,"; }
+ if($c->{crv} =~ /^void \*$/) { $rvfmt ="%p"; $rvfarg ="rv,"; }
+ if($c->{crv} =~ /^off_t$/) { $rvfmt ="%ld"; $rvfarg ="rv,"; }
+ if($c->{crv} =~ /^size_t$/) { $rvfmt ="%ld"; $rvfarg ="rv,"; }
+
+ if($c->{cai} =~ /\.\.\./) {
+#  print "var arg --> $id\n";
+  $vad = "va_list ap; mode_t vamod=0xFFFFFFFF;";
+  $vac = "va_start(ap, ctl); vamod = va_arg(ap, mode_t); va_end(ap);";
+  $c->{car} =~ s/\.\.\./vamod/;
+  
+ } else {
+  $vad = $vac = "";
+ }
+
+ print FH<<EOF;
+
+/* ipm_key crv=\"$c->{crv}\" idl=$c->{idl} idv=$c->{idv} byt=$c->{byt} dat=$c->{dat} */
+
+$c->{crv} $c->{cfn}($c->{cai}) {
+  $rvd
+  $vad
+  int i,nosize=1;
+  double t1,t2,wall;
+  IPM_TICK_TYPE T1,T2;
+  IPM_KEY_TYPE key,hkey;
+  size_t ibytes=0;
+
+  if(!(flags & IPM_LIBPC_INITIALIZED))  libPc_init();
+
+  if(flags & IPM_LIBPC_ACTIVE) {
+   flags &= ~IPM_LIBPC_ACTIVE;
+  } else {
+   flags &= ~IPM_LIBPC_ACTIVE;
+   $rva P$c->{cfn}($c->{car});
+   flags |= IPM_LIBPC_ACTIVE;
+   $rrv
+  }
+
+  IPM_TIME_GET(T1);\
+  $rva P$c->{cfn}($c->{car});\
+  IPM_TIME_GET(T2);\
+  IPM_TIME_OVERFLOW_CHECK(T1,T2);
+
+  t1 = IPM_TIME_SEC(T1)-time_io_start;
+  t2 = IPM_TIME_SEC(T2)-time_io_start;
+  IPM_TIME_RESOLUTION_CHECK(t1,t2);
+  IPM_IO_$c->{byt};
+
+  wall = t2-t1;
+  printf("IPM: %d $rvfmt $c->{cfn}($c->{fmt}) %.6e %.6e\\n",
+	task.mpi_rank, $rvfarg $c->{car}, t1, wall);
+  fflush(stdout);
+
+#ifdef IPM_LIBPC_PROFILE
+  IPM_LOG_IOEVENT(task.hash,$c->{idv},task.region_current,ibytes);
+#endif
+
+EOF
+if($c->{dat} == "DATA_MEMPLUS") {
+ print FH<<EOF;
+
+EOF
+}
+print FH<<EOF;
+
+ flags |= IPM_LIBPC_ACTIVE;
+ $rrv
+}
+EOF
+}
+

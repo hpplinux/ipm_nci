@@ -1,0 +1,36 @@
+lego> ls -l /usr/local/man/man3/ | grep MPI_File | more | egrep -i "open|close|read|write" > ~/src/ipm/doc/MPIIO.txt
+
+-rw-r--r--  1 root root  233 2004-11-15 16:26 MPI_File_close.3
+-rw-r--r--  1 root root  690 2004-11-15 16:26 MPI_File_iread.3
+-rw-r--r--  1 root root  800 2004-11-15 16:26 MPI_File_iread_at.3
+-rw-r--r--  1 root root  716 2004-11-15 16:26 MPI_File_iread_shared.3
+-rw-r--r--  1 root root  696 2004-11-15 16:26 MPI_File_iwrite.3
+-rw-r--r--  1 root root  808 2004-11-15 16:26 MPI_File_iwrite_at.3
+-rw-r--r--  1 root root  722 2004-11-15 16:26 MPI_File_iwrite_shared.3
+-rw-r--r--  1 root root  536 2004-11-15 16:26 MPI_File_open.3
+-rw-r--r--  1 root root  620 2004-11-15 16:26 MPI_File_read.3
+-rw-r--r--  1 root root  651 2004-11-15 16:26 MPI_File_read_all.3
+-rw-r--r--  1 root root  618 2004-11-15 16:26 MPI_File_read_all_begin.3
+-rw-r--r--  1 root root  473 2004-11-15 16:26 MPI_File_read_all_end.3
+-rw-r--r--  1 root root  706 2004-11-15 16:26 MPI_File_read_at.3
+-rw-r--r--  1 root root  763 2004-11-15 16:26 MPI_File_read_at_all.3
+-rw-r--r--  1 root root  700 2004-11-15 16:26 MPI_File_read_at_all_begin.3
+-rw-r--r--  1 root root  473 2004-11-15 16:26 MPI_File_read_at_all_end.3
+-rw-r--r--  1 root root  663 2004-11-15 16:26 MPI_File_read_ordered.3
+-rw-r--r--  1 root root  627 2004-11-15 16:26 MPI_File_read_ordered_begin.3
+-rw-r--r--  1 root root  481 2004-11-15 16:26 MPI_File_read_ordered_end.3
+-rw-r--r--  1 root root  645 2004-11-15 16:26 MPI_File_read_shared.3
+-rw-r--r--  1 root root  626 2004-11-15 16:26 MPI_File_write.3
+-rw-r--r--  1 root root  657 2004-11-15 16:26 MPI_File_write_all.3
+-rw-r--r--  1 root root  599 2004-11-15 16:26 MPI_File_write_all_begin.3
+-rw-r--r--  1 root root  478 2004-11-15 16:26 MPI_File_write_all_end.3
+-rw-r--r--  1 root root  736 2004-11-15 16:26 MPI_File_write_at.3
+-rw-r--r--  1 root root  770 2004-11-15 16:26 MPI_File_write_at_all.3
+-rw-r--r--  1 root root  681 2004-11-15 16:26 MPI_File_write_at_all_begin.3
+-rw-r--r--  1 root root  477 2004-11-15 16:26 MPI_File_write_at_all_end.3
+-rw-r--r--  1 root root  667 2004-11-15 16:26 MPI_File_write_ordered.3
+-rw-r--r--  1 root root  633 2004-11-15 16:26 MPI_File_write_ordered_begin.3
+-rw-r--r--  1 root root  486 2004-11-15 16:26 MPI_File_write_ordered_end.3
+-rw-r--r--  1 root root  653 2004-11-15 16:26 MPI_File_write_shared.3
+
+

@@ -1,0 +1,69 @@
+#!/bin/ksh
+
+export OBJECT_MODE=64
+echo "Step 0: Extract the shared objects from the libmpi64_r.a archive"
+ar xv $ORGIMPIPATH/lib/libmpi_r.a
+
+echo "Step 1: extract the export lists and make headers importing from libmpi_X.a(shared_object_name_X.o)"
+make_exports_64
+
+echo "Step 2: Rebuild mpci shared object"
+#export MYFLAGS="-bmap:mpci_X.map"
+export LDFLAGS="-bnoentry -bE:mpci64_r.exp -bI:mpicore64_r.exp -bI:mpipoe64_r.exp -bM:SRE -H512 -T512 -L$ORGIMPIPATH/lib  -blibpath:/usr/lib/threads:/usr/lib:/lib:/usr/lpp/ssp/css/libip"
+export LIBS="-llapi_r -lppe_r -lc -lpthreads -lrts -lodm -lcfg "
+echo "ld -o mpci_X.o -bstatic mpci64_r.o -bshared " $LDFLAGS $LIBS
+ld -o mpci_X.o -bstatic mpci64_r.o -bshared $LDFLAGS $LIBS $MYFLAGS
+
+echo "Step 3: Rebuild mpicpp shared object"
+#export MYFLAGS="-bmap:mpicpp_X.map"
+export LDFLAGS="-bnoentry -bnoobjreorder -bE:mpicpp64_r.exp -bI:mpci64_r.exp -bI:mpicore64_r.exp -bI:mpipoe64_r.exp -bI:libvtd64_r.exp -bM:SRE -H512 -T512 -L$ORGIMPIPATH/lib "
+export LIBS="-lppe_r -lc -lC -lpthreads"
+echo "ld -o mpicpp_X.o -bstatic mpicpp64_r.o -bshared " $LDFLAGS $LIBS
+ld -o mpicpp_X.o -bstatic mpicpp64_r.o -bshared $LDFLAGS $LIBS $MYFLAGS
+
+echo "Step 4: Rebuild mpipoe shared object"
+#export MYFLAGS="-bmap:mpipoe_X.map"
+export LDFLAGS="-bnoentry -bE:mpipoe64_r.exp -bI:libvtd64_r.exp -bM:SRE -H512 -T512 -L$ORGIMPIPATH/lib "
+export LIBS="-lppe_r -lc -lpthreads -lptools_ptr"
+echo "ld -o mpipoe_X.o -bstatic mpipoe64_r.o -bshared " $LDFLAGS $LIBS
+ld -o mpipoe_X.o -bstatic mpipoe64_r.o -bshared $LDFLAGS $LIBS $MYFLAGS
+
+echo "Step 5: Rebuild pm_chkrst64_r.o shared object"
+#export MYFLAGS="-bmap:pm_chkrstX64_r.map"
+export LDFLAGS="-bnoentry -bE:pm_ckpt64_r.exp -bI:mpci64_r.exp -bI:mpicore64_r.exp -bI:mpipoe64_r.exp -bM:SRE -H512 -T512 -L$ORGIMPIPATH/lib "
+export LIBS="-lppe_r -lc -lpthreads "
+echo "ld -o pm_chkrst_X.o -bstatic pm_chkrst64_r.o -bshared " $LDFLAGS $LIBS
+ld -o pm_chkrst_X.o -bstatic pm_chkrst64_r.o -bshared $LDFLAGS $LIBS $MYFLAGS
+
+echo "Step 6: Rebuild dynamic64_r.o shared object"
+#export MYFLAGS="-bmap:dynamic_X64_r.map"
+export LDFLAGS="-bnoentry -bE:libvtd64_r.exp -bI:mpipoe64_r.exp -bM:SRE -H512 -T512 -L$ORGIMPIPATH/lib "
+export LIBS="-lppe_r -lc -lrts -lpthreads"
+echo "ld -o dynamic_X64_r.o -bstatic dynamic64_r.o -bshared " $LDFLAGS $LIBS
+ld -o dynamic_X64_r.o -bstatic dynamic64_r.o -bshared $LDFLAGS $LIBS $MYFLAGS
+
+echo "Step 7: Rebuild mpicore64_r.o shared object"
+#export MYFLAGS="-bmap:mpicore_X.map"
+export LDFLAGS="-bnoentry -bnoobjreorder -bE:mpicore64_r.exp -bI:mpci64_r.exp -bI:mpipoe64_r.exp  -bI:mpifort64_r.exp  -bI:libvtd64_r.exp  -bI:mpicpp64_r.exp -bI:pm_ckpt64_r.exp -bM:SRE -H512 -T512 -L$ORGIMPIPATH/lib "
+export LIBS="-llapi_r -lppe_r -lc -lpthreads -lcfg -lodm -lm"
+echo "ld -o mpicore_X.o -bstatic mpicore64_r.o -bshared " $LDFLAGS $LIBS
+ld -o mpicore_X.o -bstatic mpicore64_r.o -bshared $LDFLAGS $LIBS $MYFLAGS
+
+echo "Step 7.5: Rebuild mpifort64_r.o shared object"
+#export MYFLAGS="-bmap:mpifort_X.map"
+export LDFLAGS="-bnoentry -bnoobjreorder -bE:mpifort64_r.exp -bI:mpci64_r.exp -bI:mpipoe64_r.exp -bI:mpicore64_r.exp -bI:libvtd64_r.exp  -bI:mpicpp64_r.exp -bI:pm_ckpt64_r.exp -bM:SRE -H512 -T512 -L$ORGIMPIPATH/lib "
+export LIBS="-llapi_r -lppe_r -lc -lpthreads -lcfg -lodm -lm"
+echo "ld -o mpifort_X.o -bstatic mpifort64_r.o -bshared " $LDFLAGS $LIBS
+ld -o mpifort_X.o -bstatic mpifort64_r.o -bshared $LDFLAGS $LIBS $MYFLAGS
+
+echo "Step 8: Create a new archive with the ..._X.o shared objects and dynamic_X64_r.o"
+rm -f libmpi_X.a
+rm -f libvtd64_r.a
+#cp dynamic64_r.o dynamic64_X.o
+ar -r libmpi_X.a mpipoe_X.o mpci_X.o mpicore_X.o mpifort_X.o mpicpp_X.o pm_initfini64.o dynamic64_X.o pm_chkrst_X.o
+ln -sf libmpi_X.a libvtd_X.a
+#rm mpipoe_X.o mpci_X.o mpicore_X.o mpifort_X.o mpicpp_X.o pm_initfini64.o dynamic64_X.o pm_chkrst_X.o mpci64_r.o mpifmod64_r.o pm_chkrst64_r.o mpicpp64_r.o
+#rm *.exp
+#
+#End of rebuild_mpi
+

@@ -1,0 +1,214 @@
+#!/usr/bin/perl 
+#use strict;
+
+##############################
+# make_ipmcalls.h for IPM
+#
+# This script writes
+#  ./ipm_calls.h
+#  ./libtiny.c
+#  ../include/ipm_calls.h
+#
+# the C code generated is a
+# pattern largely based on
+# the contents of ipm_key
+#
+# David Skinner (NERSC/LBL)
+# Sep 2004 dskinner@nersc.gov
+# Hack by Nick to get configure to work properly April 07
+#
+##############################
+#  THIS IS OPEN SOURCE CODE  #
+#       SEE ../LICENSE       # 
+##############################
+
+#####
+#   Parse arguements
+#####
+
+$FUNDERSCORE_POST = "";
+$FUNDERSCORE_PRE = "";
+$SPLIT_COLLECTIVE=0;
+$WRAP_FORTRAN=1;
+$build_id = time();
+
+$done = 0;
+while($done == 0) {
+ if($ARGV[0] =~ /^-nofort$/) {
+  $WRAP_FORTRAN=0;
+ } elsif($ARGV[0] =~ /^-split_collectives$/) {
+  $SPLIT_COLLECTIVE=1;
+ } elsif($ARGV[0] =~ /^-funderscore_post$/) {
+  $FUNDERSCORE_POST = $FUNDERSCORE_POST."_";
+ } elsif($ARGV[0] =~ /^-funderscore_pre$/) {
+  $FUNDERSCORE_PRE = $FUNDERSCORE_PRE."_";
+ } elsif($ARGV[0] =~ /^-prep$/) {
+  $ONLY_PREP=1;
+ } else {
+  $IPM_KEYFILE = $ARGV[0];
+  $done = 1;
+ }
+ shift @ARGV;
+}
+
+
+unless (-e $IPM_KEYFILE) {
+ print "ipm_key file not found (IPM_KEYFILE=$IPM_KEYFILE)\n";
+ exit(1);
+}
+
+
+#####
+#   Parse the key file
+#####
+%call = ();
+%tag = ();
+sub numy { $a <=> $b }
+
+#$n = nfind("a",\@A); $n gives number of "a" elements in @A
+sub nfind {
+    my $pelem = shift;
+    my $arryr = shift;
+    my $n = 0;
+    warn "Not an array reference" if ref($arryr) ne "ARRAY";
+    for my $elem (@$arryr) {
+     if($elem =~ /^$pelem$/) {
+       $n++;
+     }
+    }
+    return $n;
+}
+
+open(FH,"< $IPM_KEYFILE") || die "Cannot open $IPM_KEYFILE";
+while(defined($line = <FH>)) {
+ if($line !~ /\|MP[IE]_/) {next;}
+ chomp($line);
+ @v = split('\|',$line);
+ $id = $v[0];
+ next if ($SPLIT_COLLECTIVE==0 && $line =~ "MPE_I");
+ @u = split('\,',$v[4]);
+ $call{$id} = {
+  idv => "$v[0]",
+  idl => "$v[1]",
+  cpt => "$v[2]",
+  fpt => "$v[3]",
+  sem => "$u[0]",
+  byt => "$u[1]",
+  rnk => "$u[2]",
+  dat => "$u[3]",
+  com => "$u[4]"};
+
+ $_ = $call{$id}->{cpt};
+ /(.*) (.*)\((.*)\)/;
+ $call{$id}{crv} = $1;
+ $call{$id}{lab} = $2;
+ $call{$id}{cfn} = $2;
+ $call{$id}{cai} = $3;
+ $call{$id}{car} = $3;
+ $call{$id}{car} =~ s/\(//;
+ $call{$id}{car} =~ s/\)//;
+ $call{$id}{car} =~ s/void \*//g;
+ $call{$id}{car} =~ s/void//g;
+ $call{$id}{car} =~ s/int \*//g;
+ $call{$id}{car} =~ s/char \*\*\*//g;
+ $call{$id}{car} =~ s/int //g;
+ $call{$id}{car} =~ s/MPI_Datatype//g;
+ $call{$id}{car} =~ s/MPI_Request \*//g;
+ $call{$id}{car} =~ s/MPI_Status \*//g;
+ $call{$id}{car} =~ s/MPI_Comm//g;
+ $call{$id}{car} =~ s/MPI_Op//g;
+ $call{$id}{car} =~ s/ //g;
+ $_ = $call{$id}{fpt};
+ /(.*) (.*)\((.*)\)/;
+ $call{$id}{frv} = $1;
+ $call{$id}{ffn} = $2.$FUNDERSCORE_POST;
+ $call{$id}{fai} = $3;
+ $call{$id}{far} = $3;
+ $call{$id}{far} =~ s/\(//;
+ $call{$id}{far} =~ s/\)//;
+ $call{$id}{far} =~ s/void \*//g;
+ $call{$id}{far} =~ s/int \*//g;
+ $call{$id}{far} =~ s/int //g;
+ $call{$id}{far} =~ s/MPI_Datatype \*//g;
+ $call{$id}{far} =~ s/MPI_Request \*//g;
+ $call{$id}{far} =~ s/MPI_Status \*//g;
+ $call{$id}{far} =~ s/MPI_Comm \*//g;
+ $call{$id}{far} =~ s/MPI_Op//g;
+ $call{$id}{far} =~ s/ //g;
+}
+close(FH);
+
+
+###############################################################################
+# Generate ipm_buildinfo.c
+###############################################################################
+open(FH,">  buildinfo.c") || die "Cannot open buildinfo.c";
+print FH<<EOF;
+/*
+ * Build time constants
+ *
+ * DO NOT EDIT: automatically generated at buildtime by make_wrappers
+ */
+
+/* 
+EOF
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ printf FH "%d %-4s %-10s %-75s %-15s %-15s %-10s %-10s %-10s \n", $id , $c->{crv}, $c->{cfn}, $c->{car}, $c->{byt}, $c->{rnk}, $c->{dat}, $c->{com}, $c->{ffn} ;
+}
+
+print FH<<EOF;
+*/
+
+/*
+EOF
+
+print FH<<EOF;
+*/
+EOF
+close(FH);
+
+############################################################################### 
+# Generate prep info for config.h
+############################################################################### 
+$ncalls = 0; foreach $id (keys %call) { $ncalls++; }
+if($ONLY_PREP == 1) {
+ print "#define IPM_NCALLS $ncalls\n";
+ print "#define IPM_BUILD_ID \"$build_id\"\n";
+ exit(0);
+}
+
+############################################################################### 
+# Generate labels
+############################################################################### 
+
+open(FH,">  ../include/ipm_calls.h") || die 'Cannot open ../include/ipm_calls.h';
+print "Generating ../include/ipm_calls.h\n";
+print FH <<EOF;
+/*
+ * #####
+ * # IPM MPI labels and ids
+ * #####
+ *
+ * DO NOT EDIT: automatically generated at buildtime by make_wrappers
+ */
+
+EOF
+
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ printf FH "#define %-25s %-3d\n", $c->{idl},$c->{idv};
+}
+
+print FH <<EOF;
+int ipm_label_write(ipm_taskdata *taskp) {
+EOF
+foreach $id (sort numy keys %call) { $c = $call{$id};
+ printf FH " sprintf(taskp->call_label[%d],\"%s\");\n" , $id, $c->{cfn};
+}
+print FH <<EOF;
+ return 0;
+}
+
+EOF
+
+close(FH);
+

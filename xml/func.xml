@@ -1,0 +1,279 @@
+<mpi>
+<func idv="1" idl="MPI_INIT_ID" >
+<c_api>int MPI_Init(int *argc, char ***argv)</c_api>
+<f_api>void mpi_init(int *info)</f_api>
+CS_REMOTE,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="2" idl="MPI_FINALIZE_ID" >
+<c_api>int MPI_Finalize(void)</c_api>
+<f_api>void mpi_finalize(int *info)</f_api>
+CS_REMOTE,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="3" idl="MPI_COMM_SIZE_ID" >
+<c_api>int MPI_Comm_rank(MPI_Comm comm, int *rank)</c_api>
+<f_api>void mpi_comm_rank(int *comm, int *rank, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_ONE
+</func>
+<func idv="4" idl="MPI_COMM_RANK_ID" >
+<c_api>int MPI_Comm_size(MPI_Comm comm, int *size)</c_api>
+<f_api>void mpi_comm_size(int *comm, int *size, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_ONE
+</func>
+<func idv="5" idl="MPI_SEND_ID" >
+<c_api>int MPI_Send(void *sbuf, int scount, MPI_Datatype stype, int dest, int tag, MPI_Comm comm)</c_api>
+<f_api>void mpi_send(void *sbuf, int *scount, int *stype, int *dest, int *tag, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_DEST,DATA_TX,COMM_ONE
+</func>
+<func idv="6" idl="MPI_SSEND_ID" >
+<c_api>int MPI_Ssend(void *sbuf, int scount, MPI_Datatype stype, int dest, int tag, MPI_Comm comm)</c_api>
+<f_api>void mpi_ssend(void *sbuf, int *scount, int *stype, int *dest, int *tag, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_DEST,DATA_TX,COMM_ONE
+</func>
+<func idv="7" idl="MPI_RSEND_ID" >
+<c_api>int MPI_Rsend(void *sbuf, int scount, MPI_Datatype stype, int dest, int tag, MPI_Comm comm)</c_api>
+<f_api>void mpi_rsend(void *sbuf, int *scount, int *stype, int *dest, int *tag, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_DEST,DATA_TX,COMM_ONE
+</func>
+<func idv="8" idl="MPI_BSEND_ID" >
+<c_api>int MPI_Bsend(void *sbuf, int scount, MPI_Datatype stype, int dest, int tag, MPI_Comm comm)</c_api>
+<f_api>void mpi_bsend(void *sbuf, int *scount, int *stype, int *dest, int *tag, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_DEST,DATA_TX,COMM_ONE
+</func>
+<func idv="9" idl="MPI_ISEND_ID" >
+<c_api>int MPI_Isend(void *sbuf, int scount, MPI_Datatype stype, int dest, int tag, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpi_isend(void *sbuf, int *scount, int *stype, int *dest, int *tag, int *comm, int *req, int *info)</f_api>
+CS_ASYNC,BYTES_SCOUNT,RANK_DEST,DATA_TX,COMM_ONE
+</func>
+<func idv="10" idl="MPI_ISSEND_ID" >
+<c_api>int MPI_Issend(void *sbuf, int scount, MPI_Datatype stype, int dest, int tag, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpi_issend(void *sbuf, int *scount, int *stype, int *dest, int *tag, int *comm, int *req, int *info)</f_api>
+CS_ASYNC,BYTES_SCOUNT,RANK_DEST,DATA_TX,COMM_ONE
+</func>
+<func idv="11" idl="MPI_IRSEND_ID" >
+<c_api>int MPI_Irsend(void *sbuf, int scount, MPI_Datatype stype, int dest, int tag, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpi_irsend(void *sbuf, int *scount, int *stype, int *dest, int *tag, int *comm, int *req, int *info)</f_api>
+CS_ASYNC,BYTES_SCOUNT,RANK_DEST,DATA_TX,COMM_ONE
+</func>
+<func idv="12" idl="MPI_IBSEND_ID" >
+<c_api>int MPI_Ibsend(void *sbuf, int scount, MPI_Datatype stype, int dest, int tag, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpi_ibsend(void *sbuf, int *scount, int *stype, int *dest, int *tag, int *comm, int *req, int *info)</f_api>
+CS_ASYNC,BYTES_SCOUNT,RANK_DEST,DATA_RX,COMM_ONE
+</func>
+<func idv="18" idl="MPI_RECV_ID" >
+<c_api>int MPI_Recv(void *rbuf, int rcount, MPI_Datatype rtype, int src, int tag, MPI_Comm comm, MPI_Status *status)</c_api>
+<f_api>void mpi_recv(void *rbuf, int *rcount, int *rtype, int *src, int *tag, int *comm, MPI_Status *status, int *info)</f_api>
+CS_REMOTE,BYTES_RCOUNT,RANK_STATUS,DATA_RX,COMM_ONE
+</func>
+<func idv="19" idl="MPI_IRECV_ID" >
+<c_api>int MPI_Irecv(void *rbuf, int rcount, MPI_Datatype rtype, int src, int tag, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpi_irecv(void *rbuf, int *rcount, int *rtype, int *src, int *tag, int *comm, int *req, int *info)</f_api>
+CS_ASYNC,BYTES_RCOUNT,RANK_SRCANY,DATA_RX,COMM_ONE
+</func>
+<func idv="20" idl="MPI_SENDRECV_ID" >
+<c_api>int MPI_Sendrecv(void *sbuf, int scount, MPI_Datatype stype, int dest, int stag, void *rbuf, int rcount, MPI_Datatype rtype, int src, int rtag, MPI_Comm comm, MPI_Status *status)</c_api>
+<f_api>void mpi_sendrecv(void *sbuf, int *scount, int *stype, int *dest,   int *stag, void *rbuf, int *rcount, int *rtype, int *src, int *rtag, int *comm, MPI_Status *status, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_DEST,DATA_TXRX,COMM_ONE
+</func>
+<func idv="21" idl="MPI_SENDRECV_REPLACE_ID" >
+<c_api>int MPI_Sendrecv_replace(void *sbuf, int scount, MPI_Datatype stype, int dest, int stag, int src, int rtag, MPI_Comm comm, MPI_Status *status)</c_api>
+<f_api>void mpi_sendrecv_replace(void *sbuf, int *scount, int *stype, int *dest, int *stag, int *src, int *rtag, int *comm, MPI_Status *status, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_DEST,DATA_TXRX,COMM_ONE
+</func>
+<func idv="30" idl="MPI_WAIT_ID" >
+<c_api>int MPI_Wait(MPI_Request *request, MPI_Status *status)</c_api>
+<f_api>void mpi_wait(int *request, MPI_Status *status, int *info)</f_api>
+CS_REMOTE,BYTES_STATUS,RANK_STATUS,DATA_NONE,COMM_NONE
+</func>
+<func idv="31" idl="MPI_WAITANY_ID" >
+<c_api>int MPI_Waitany(int num, MPI_Request *req, int *indx, MPI_Status *status)</c_api>
+<f_api>void mpi_waitany(int *num, int *req, int *indx, MPI_Status *status, int *info)</f_api>
+CS_REMOTE,BYTES_STATUSI,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="32" idl="MPI_WAITALL_ID" >
+<c_api>int MPI_Waitall(int num, MPI_Request *req, MPI_Status *status)</c_api>
+<f_api>void mpi_waitall(int *num, int *req, MPI_Status *status, int *info)</f_api>
+CS_REMOTE,BYTES_STATUSES,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="33" idl="MPI_WAITSOME_ID" >
+<c_api>int MPI_Waitsome(int inum, MPI_Request *req, int *num, int *ind, MPI_Status *status)</c_api>
+<f_api>void mpi_waitsome(int *inum, int *req, int *num, int *ind, MPI_Status *status, int *info)</f_api>
+CS_REMOTE,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="24" idl="MPI_PROBE_ID" >
+<c_api>int MPI_Probe(int src, int tag, MPI_Comm comm, MPI_Status *status)</c_api>
+<f_api>void mpi_probe(int *src, int *tag, int *comm, MPI_Status *status, int *info)</f_api>
+CS_REMOTE,BYTES_NONE,RANK_SRC,DATA_NONE,COMM_ONE
+</func>
+<func idv="25" idl="MPI_IPROBE_ID" >
+<c_api>int MPI_Iprobe(int src, int tag, MPI_Comm comm, int *flag, MPI_Status *status)</c_api>
+<f_api>void mpi_iprobe(int *src, int *tag, int *comm, int *flag, MPI_Status *status, int *info)</f_api>
+CS_ASYNC,BYTES_NONE,RANK_SRC,DATA_NONE,COMM_ONE
+</func>
+<func idv="13" idl="MPI_SEND_INIT_ID" >
+<c_api>int MPI_Send_init(void *sbuf, int scount, MPI_Datatype type, int dest, int tag, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpi_send_init(void *sbuf, int *scount, int *type, int *dest, int *tag, int *comm, int *req, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_DEST,DATA_NONE,COMM_ONE
+</func>
+<func idv="14" idl="MPI_SSEND_INIT_ID" >
+<c_api>int MPI_Ssend_init(void *sbuf, int scount, MPI_Datatype type, int dest, int tag, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpi_ssend_init(void *sbuf, int *scount, int *type, int *dest, int *tag, int *comm, int *req, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_DEST,DATA_NONE,COMM_ONE
+</func>
+<func idv="15" idl="MPI_RSEND_INIT_ID" >
+<c_api>int MPI_Rsend_init(void *sbuf, int scount, MPI_Datatype type, int dest, int tag, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpi_rsend_init(void *sbuf, int *scount, int *type, int *dest, int *tag, int *comm, int *req, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_DEST,DATA_NONE,COMM_ONE
+</func>
+<func idv="16" idl="MPI_BSEND_INIT_ID" >
+<c_api>int MPI_Bsend_init(void *sbuf, int scount, MPI_Datatype type, int dest, int tag, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpi_bsend_init(void *sbuf, int *scount, int *type, int *dest, int *tag, int *comm, int *req, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_DEST,DATA_NONE,COMM_ONE
+</func>
+<func idv="17" idl="MPI_RECV_INIT_ID" >
+<c_api>int MPI_Recv_init(void *rbuf, int rcount, MPI_Datatype type, int src, int tag, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpi_recv_init(void *rbuf, int *rcount, int *type, int *src, int *tag, int *comm, int *req, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_SRCANY,DATA_NONE,COMM_ONE
+</func>
+<func idv="22" idl="MPI_BUFFER_ATTACH_ID" >
+<c_api>int MPI_Buffer_attach(void *buffer, int size)</c_api>
+<f_api>void mpi_buffer_attach(void *buffer, int *size, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="23" idl="MPI_BUFFER_DETACH_ID" >
+<c_api>int MPI_Buffer_detach(void *buffer, int *size)</c_api>
+<f_api>void mpi_buffer_detach(void *buffer, int *size, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="26" idl="MPI_TEST_ID" >
+<c_api>int MPI_Test(MPI_Request *request, int *flag, MPI_Status *status)</c_api>
+<f_api>void mpi_test(int *request, int *flag, MPI_Status *status, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="27" idl="MPI_TESTANY_ID" >
+<c_api>int MPI_Testany(int num, MPI_Request *req, int *indx, int *flag, MPI_Status *status)</c_api>
+<f_api>void mpi_testany(int *num, int *req, int *indx, int *flag, MPI_Status *status, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="28" idl="MPI_TESTALL_ID" >
+<c_api>int MPI_Testall(int num, MPI_Request *req, int *flag, MPI_Status *status)</c_api>
+<f_api>void mpi_testall(int *num, int *req, int *flag, MPI_Status *status, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="29" idl="MPI_TESTSOME_ID" >
+<c_api>int MPI_Testsome(int inum, MPI_Request *req, int *onum, int *ind, MPI_Status *status)</c_api>
+<f_api>void mpi_testsome(int *inum, int *req, int *onum, int *ind, MPI_Status *status, int *info)</f_api>
+CS_LOCAL,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="34" idl="MPI_START_ID" >
+<c_api>int MPI_Start(MPI_Request *req)</c_api>
+<f_api>void mpi_start(int *req, int *info)</f_api>
+CS_REMOTE,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="35" idl="MPI_STARTALL_ID" >
+<c_api>int MPI_Startall(int num, MPI_Request *req)</c_api>
+<f_api>void mpi_startall(int *num, int *req, int *info)</f_api>
+CS_REMOTE,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_NONE
+</func>
+<func idv="36" idl="MPI_BCAST_ID" >
+<c_api>int MPI_Bcast(void *sbuf, int scount, MPI_Datatype stype, int root, MPI_Comm comm)</c_api>
+<f_api>void mpi_bcast(void *sbuf, int *scount, int *stype, int *root, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_ROOT,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="45" idl="MPI_REDUCE_ID" >
+<c_api>int MPI_Reduce(void *sbuf, void *rbuf, int scount, MPI_Datatype stype, MPI_Op op, int root, MPI_Comm comm)</c_api>
+<f_api>void mpi_reduce(void *sbuf, void *rbuf, int *scount, int *stype, int *op, int *root, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_ROOT,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="47" idl="MPI_REDUCE_SCATTER_ID" >
+<c_api>int MPI_Reduce_scatter(void *sbuf, void *rbuf, int *scounts, MPI_Datatype stype, MPI_Op op, MPI_Comm comm)</c_api>
+<f_api>void mpi_reduce_scatter(void *sbuf, void *rbuf, int *scounts, int *stype, int *op, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNTS,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="37" idl="MPI_BARRIER_ID" >
+<c_api>int MPI_Barrier(MPI_Comm comm)</c_api>
+<f_api>void mpi_barrier(int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_NONE,RANK_NONE,DATA_NONE,COMM_ONE
+</func>
+<func idv="38" idl="MPI_GATHER_ID" >
+<c_api>int MPI_Gather(void *sbuf, int scount, MPI_Datatype stype, void *rbuf, int rcount, MPI_Datatype rtype, int root, MPI_Comm comm)</c_api>
+<f_api>void mpi_gather(void *sbuf, int *scount, int *stype, void *rbuf, int *rcount, int *rtype, int *root, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_RCOUNT,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="39" idl="MPI_GATHERV_ID" >
+<c_api>int MPI_Gatherv(void *sbuf, int scount, MPI_Datatype stype, void *rbuf, int *rcounts, int *rdisp, MPI_Datatype rtype, int root, MPI_Comm comm)</c_api>
+<f_api>void mpi_gatherv(void *sbuf, int *scount, int *stype, void *rbuf, int *rcounts, int *rdisp, int *rtype, int *root, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_RCOUNTI,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="40" idl="MPI_SCATTER_ID" >
+<c_api>int MPI_Scatter(void *sbuf, int scount, MPI_Datatype stype, void *rbuf, int rcount, MPI_Datatype rtype, int root, MPI_Comm comm)</c_api>
+<f_api>void mpi_scatter(void *sbuf, int *scount, int *stype, void *rbuf, int *rcount, int *rtype, int *root, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="41" idl="MPI_SCATTERV_ID" >
+<c_api>int MPI_Scatterv(void *sbuf, int *scounts, int *sdisp, MPI_Datatype stype, void *rbuf, int rcount, MPI_Datatype rtype, int root, MPI_Comm comm)</c_api>
+<f_api>void mpi_scatterv(void *sbuf, int *scounts, int *sdisp, int *stype, void *rbuf, int *rcount, int *rtype, int *root, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNTI,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="42" idl="MPI_SCAN_ID" >
+<c_api>int MPI_Scan(void *sbuf, void *rbuf, int scount, MPI_Datatype stype, MPI_Op op, MPI_Comm comm)</c_api>
+<f_api>void mpi_scan(void *sbuf, void *rbuf, int *scount, int *stype, int *op, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="43" idl="MPI_ALLGATHER_ID" >
+<c_api>int MPI_Allgather(void *sbuf, int scount, MPI_Datatype stype, void *rbuf, int rcount, MPI_Datatype rtype, MPI_Comm comm)</c_api>
+<f_api>void mpi_allgather(void *sbuf, int *scount, int *stype, void *rbuf, int *rcount, int *rtype, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_RCOUNT,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="44" idl="MPI_ALLGATHERV_ID" >
+<c_api>int MPI_Allgatherv(void *sbuf, int scount, MPI_Datatype stype, void *rbuf, int *rcounts, int *rdisp, MPI_Datatype rtype, MPI_Comm comm)</c_api>
+<f_api>void mpi_allgatherv(void *sbuf, int *scount, int *stype, void *rbuf, int *rcounts, int *rdisp, int *rtype, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_RCOUNTI,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="46" idl="MPI_ALLREDUCE_ID" >
+<c_api>int MPI_Allreduce(void *sbuf, void *rbuf, int scount, MPI_Datatype stype, MPI_Op op, MPI_Comm comm)</c_api>
+<f_api>void mpi_allreduce(void *sbuf, void *rbuf, int *scount, int *stype, int *op, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="48" idl="MPI_ALLTOALL_ID" >
+<c_api>int MPI_Alltoall(void *sbuf, int scount, MPI_Datatype stype, void *rbuf, int rcount, MPI_Datatype rtype, MPI_Comm comm)</c_api>
+<f_api>void mpi_alltoall(void *sbuf, int *scount, int *stype, void *rbuf, int *rcount, int *rtype, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNT,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="49" idl="MPI_ALLTOALLV_ID" >
+<c_api>int MPI_Alltoallv(void *sbuf, int *scounts, int *sdisp, MPI_Datatype stype, void *rbuf, int *rcounts, int *rdisp, MPI_Datatype rtype, MPI_Comm comm)</c_api>
+<f_api>void mpi_alltoallv(void *sbuf, int *scounts, int *sdisp, int *stype, void *rbuf, int *rcounts, int *rdisp, int *rtype, int *comm, int *info)</f_api>
+CS_REMOTE,BYTES_SCOUNTS,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="50" idl="MPE_IREDUCE_ID" >
+<c_api>int MPE_Ireduce(void *sbuf, void *rbuf, int scount, MPI_Datatype stype, MPI_Op op, int root, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpe_ireduce(void *sbuf, void *rbuf, int *scount, int *stype, int *op, int *root, int *comm, int *req, int *info)</f_api>
+CS_ASYNC,BYTES_SCOUNT,RANK_ROOT,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="51" idl="MPE_IBCAST_ID" >
+<c_api>int MPE_Ibcast(void *sbuf, int scount, MPI_Datatype stype, int root, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpe_ibcast(void *sbuf, int *scount, int *stype, int *root, int *comm, int *req, int *info)</f_api>
+CS_ASYNC,BYTES_SCOUNT,RANK_ROOT,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="52" idl="MPE_ISCATTERV_ID" >
+<c_api>int MPE_Iscatterv(void *sbuf, int *scounts, int *sdisp, MPI_Datatype stype, void *rbuf, int rcount, MPI_Datatype rtype, int root, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpe_iscatterv(void *sbuf, int *scounts, int *sdisp, int *stype, void *rbuf, int *rcount, int *rtype, int *root, int *comm, int *req, int *info)</f_api>
+CS_ASYNC,BYTES_SCOUNTI,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="53" idl="MPE_IALLREDUCE_ID" >
+<c_api>int MPE_Iallreduce(void *sbuf, void *rbuf, int scount, MPI_Datatype stype, MPI_Op op, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpe_iallreduce(void *sbuf, void *rbuf, int *scount, int *stype, int *op, int *comm, int *req, int *info)</f_api>
+CS_ASYNC,BYTES_SCOUNT,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+<func idv="54" idl="MPE_IALLTOALLV_ID" >
+<c_api>int MPE_Ialltoallv(void *sbuf, int *scounts, int *sdisp, MPI_Datatype stype, void *rbuf, int *rcounts, int *rdisp, MPI_Datatype rtype, MPI_Comm comm, MPI_Request *req)</c_api>
+<f_api>void mpe_ialltoallv(void *sbuf, int *scounts, int *sdisp, int *stype, void *rbuf, int *rcounts, int *rdisp, int *rtype, int *comm, int *req, int *info)</f_api>
+CS_ASYNC,BYTES_SCOUNTS,RANK_ALL,DATA_COLLECTIVE,COMM_ONE
+</func>
+</mpi>
+
+<mpi-io>
+</mpi-io>
+
+<libc>
+
+</libc>

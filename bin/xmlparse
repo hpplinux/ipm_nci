@@ -1,0 +1,28 @@
+#!/usr/bin/perl -w
+use XML::Simple;
+use Data::Dumper;
+
+
+$verbose =0;
+$test_classes="all";
+
+while(defined($ARGV[0])) {
+ if($ARGV[0] =~ /^-c$/) {
+  $test_classes= $ARGV[1];
+  shift @ARGV;
+ } elsif($ARGV[0] =~ /^-v$/) {
+  $verbose=1;
+ } else {
+  $fname = $ARGV[0];
+  $done = 1;
+ }
+ shift @ARGV;
+}
+
+my %ipm = ();
+my $xs = new XML::Simple(ForceArray => 1, KeepRoot => 1);
+my $ref = $xs->XMLin("$fname",
+	KeepRoot => 0
+	);
+print Dumper($ref);
+

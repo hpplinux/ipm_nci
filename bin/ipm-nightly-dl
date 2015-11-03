@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# rohan :: produces http://www.nersc.gov/~dskinner/ipm-nightly.tar
+
+cd /home/dskinner/public_html
+rm -f ipm-hpc-cvsroot.tar.bz2
+wget http://cvs.sourceforge.net/cvstarballs/ipm-hpc-cvsroot.tar.bz2
+rm -f ipm-hpc-cvsroot.tar
+bunzip2 ipm-hpc-cvsroot.tar.bz2 
+rm -rf ipm-hpc
+tar -xf ipm-hpc-cvsroot.tar 
+export CVSROOT=/home/dskinner/public_html/ipm-hpc
+rm -rf ipm-tmp
+mkdir ipm-tmp
+cd ipm-tmp
+cvs co ipm
+mv ipm ipm-nightly
+tar -cf ../ipm-nightly.tar ipm-nightly
+cd ..
+rm -rf ipm-tmp

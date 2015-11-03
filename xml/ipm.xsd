@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+            targetNamespace="http://www.nersc.gov/projects/ipm"
+            xmlns="http://www.nersc.gov/projects/ipm"
+            elementFormDefault="unqualified">
+
+<xsd:annotation>
+    <xsd:documentation>
+    The job element should contain a number of task elements equal to ntasks.
+    This contraint is not expressible with XML Schema.
+    We will express this constraint in the appinfo section (below).
+    </xsd:documentation>
+    <xsd:appinfo>
+          <assert test="A &gt; B">A should be greater than B</assert>
+    </xsd:appinfo>
+<xsd:/annotation>
+
+<xsd:element name="job" type="job"/>
+<xsd:complexType name="job">
+ <xsd:sequence>
+  <xsd:any minOccurs="0" maxOccurs="unbounded"/>
+
+  <xsd:element name="Title">
+  <xsd:complexType>
+  <xsd:simpleContent>
+          <xsd:extension base="xsd:string">
+                  <xsd:anyAttribute/>
+          </xsd:extension>
+    </xsd:simpleContent>
+  </xsd:complexType>
+  <xsd:/element>
+
+  <xsd:any minOccurs="0" maxOccurs="unbounded"/>
+
+  <xsd:element name="Author">
+  <xsd:complexType>
+  <xsd:simpleContent>
+          <xsd:extension base="xsd:string">
+                  <xsd:anyAttribute/>
+          </xsd:extension>
+    </xsd:simpleContent>
+  </xsd:complexType>
+  </xsd:element>
+
+</xsd:sequence>
+<xsd:anyAttribute/>
+</xsd:complexType>
+<xsd:/element>

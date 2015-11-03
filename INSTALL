@@ -1,0 +1,56 @@
+1) You can download IPM from sourceforge
+
+cvs -d:pserver:anonymous@cvs.sourceforge.net:/cvsroot/ipm-hpc login 
+cvs -z3 -d:pserver:anonymous@cvs.sourceforge.net:/cvsroot/ipm-hpc co -P ipm
+
+or
+
+export CVS_RSH=ssh 
+cvs -z3 -d:ext:developername@cvs.sourceforge.net:/cvsroot/ipm-hpc co -P ipm
+
+2) ./configure - this should provide a basic working configuration.
+
+Even better is if you can help IPM out a little eg:
+
+./configure --with-os=LINUX --with-compiler=gcc --with-arch=LINUX --with-cpu=INTEL
+
+this is especially important if you have a machine with several compilers installed.
+
+ ./configure --help will provide a full set of options
+
+If you are cross-compiling ie. the architecture of the compute portion of your 
+machine is different from the login node the configure process can cause problems.
+Please contact us for help if you encounter such problems.
+
+3) make (or make shared if you plan to use LD_PRELOAD and libipm.so below).
+
+4) make test - skip if integrating with system MPI 
+
+	 Not sure to work on all platforms since the route to parallel 
+	 execution is very site specific. If "make test" does not work 
+         then try linking directly against libipm.a and running your code. 
+
+5) install
+
+	You can install libipm.a as a library to link applications against
+	or what is preferable is to integrate IPM with you MPI library and/or
+	parallel environment. This tends to be highly platform specfic. 
+
+	LINUX:  1) link against -lipm
+	 	2) relink your central MPI lib to include ipm hooks
+		3) LD_PRELOAD libipm.so at runtime (in batch)
+		
+	ALTIX: LD_PRELOAD libipm.so at runtime
+
+	AIX: make ibm 
+	     cp ./lib/libmpi_r.a to $MYLIBAREA
+	     where $MYLIBAREA is a directory that you will later 
+             assign to MP_EUILIBPATH
+
+I figure there is no practical way to autoconf this program since detection 
+of MPI is complicated by batch execution. Someone prove me wrong please. 
+
+6) Note: make clean will remove for recompilation
+         make real-clean will remove for reconfiguration
+
+questions -> dskinner@nersc.gov nwright@sdsc.edu

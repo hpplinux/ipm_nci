@@ -1,0 +1,18 @@
+#!/bin/sh
+
+spc=0 
+
+if [ "$1" == "-spc" ] ; then 
+ spc=1
+fi
+
+if [ -f /proc/cpuinfo ] ; then 
+ ghz=`grep "cpu MHz" /proc/cpuinfo  | awk '(NR==1){print $4/1000}'`
+fi 
+
+if [ "$spc" == "1" ] ; then 
+ echo $ghz | awk '{printf("%.6e\n", 1.0/(1000000000*$1))}'
+else 
+ echo $ghz
+fi
+

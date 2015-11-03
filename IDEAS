@@ -1,0 +1,25 @@
+-----
+More feature requests on the sourceforge website
+-----
+similar to dump -H on AIX, under linux could do
+eu-readelf  -a  a.out
+to get lots of info on a.out
+------
+ 
+interface to 
+MPI_SGI_stats
+
+------
+
+instead of linking via function indirection, maybe this method is more 
+sensisble and general 
+
+function {
+ logic : {
+  timing{pfunction()}
+  timing{pass}
+  timing{replacement}
+ }
+}
+
+

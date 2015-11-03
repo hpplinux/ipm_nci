@@ -1,0 +1,26 @@
+#! /bin/ksh
+# make_exports
+echo "Making export list for mpci_r.o"
+echo "#! libmpi_X.a(mpci_X.o)" > mpci_r.exp
+make_exp mpci_r.o >> mpci_r.exp
+echo "Making export list for mpicore_r.o"
+echo "#! libmpi_X.a(mpicore_X.o)" > mpicore_r.exp
+make_exp mpicore_r.o >> mpicore_r.exp
+echo "Making export list for mpipoe_r.o"
+echo "#! libmpi_X.a(mpipoe_X.o)" > mpipoe_r.exp
+make_exp mpipoe_r.o >> mpipoe_r.exp
+echo "Making export list for mpicpp_r.o"
+echo "#! libmpi_X.a(mpicpp_X.o)" > mpicpp_r.exp
+make_exp mpicpp_r.o >> mpicpp_r.exp
+echo "Making export list for mpifort_r.o"
+echo "#! libmpi_X.a(mpifort_X.o)" > mpifort_r.exp
+make_exp mpifort_r.o >> mpifort_r.exp
+echo "Making export list for pm_chkrst_r.o"
+echo "#! libmpi_X.a(pm_chkrst_X.o)" > pm_ckpt_r.exp
+make_exp pm_chkrst_r.o >> pm_ckpt_r.exp
+echo "Making export list for libvtd_r.o"
+echo "#! libvtd_X.a(dynamic_X.o)" > libvtd_r.exp
+make_exp dynamic.o >> libvtd_r.exp
+#
+# End of make_exports
+#

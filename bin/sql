@@ -1,0 +1,99 @@
+mysql> desc poe_plus;
++-------------------+--------------+------+-----+---------+-------+
+| Field             | Type         | Null | Key | Default | Extra |
++-------------------+--------------+------+-----+---------+-------+
+| stepid            | varchar(64)  |      | PRI |         |       |
+| memory            | float        | YES  |     | NULL    |       |
+| gflops            | float        | YES  |     | NULL    |       |
+| command           | blob         | YES  |     | NULL    |       |
+| numtasks          | int(11)      | YES  |     | NULL    |       |
+| owner             | varchar(8)   | YES  |     | NULL    |       |
+| wallclock         | bigint(20)   | YES  |     | NULL    |       |
+| timestamp         | bigint(20)   |      | PRI | 0       |       |
+| comm_pct          | float        | YES  |     | NULL    |       |
+| l_p_tlbmiss       | float        | YES  |     | NULL    |       |
+| task_wall         | float        | YES  |     | NULL    |       |
+| mpi_time          | float        | YES  |     | NULL    |       |
+| mpi_max_functions | blob         | YES  |     | NULL    |       |
+| mpi_ncalls        | float        | YES  |     | NULL    |       |
+| mpi_xfer_mb       | float        | YES  |     | NULL    |       |
+| sw_id             | varchar(100) | YES  |     |         |       |
++-------------------+--------------+------+-----+---------+-------+
+16 rows in set (0.00 sec)
+
+mysql> show tables;
++----------------------+
+| Tables_in_ll_summary |
++----------------------+
+| admin                |
+| hosts                |
+| hw_counters          |
+| ipm_summary          |
+| mpi_functions        |
+| nersc_hpc_jobs_temp  |
+| poe_plus             |
+| summary              |
+| summary_jacquard     |
+| workload             |
+| ytd_scaling          |
++----------------------+
+11 rows in set (0.00 sec)
+
+mysql> desc mpi_functions;
++-----------------------+-------------+------+-----+---------+-------+
+| Field                 | Type        | Null | Key | Default | Extra |
++-----------------------+-------------+------+-----+---------+-------+
+| stepid                | varchar(16) |      | PRI |         |       |
+| timestamp             | bigint(20)  |      | PRI | 0       |       |
+| f_name                | varchar(64) |      | PRI |         |       |
+| f_time_avg            | double      | YES  |     | NULL    |       |
+| f_mpi_pct             | double      | YES  |     | NULL    |       |
+| f_mb_per_task         | double      | YES  |     | NULL    |       |
+| f_num_calls_avg       | double      | YES  |     | NULL    |       |
+| f_time_sum            | double      | YES  |     | 0       |       |
+| f_time_min            | double      | YES  |     | 0       |       |
+| f_time_max            | double      | YES  |     | 0       |       |
+| f_time_sd             | double      | YES  |     | 0       |       |
+| f_num_calls_sum       | int(11)     | YES  |     | 0       |       |
+| f_num_calls_min       | int(11)     | YES  |     | 0       |       |
+| f_num_calls_max       | int(11)     | YES  |     | 0       |       |
+| f_num_calls_sd        | double      | YES  |     | 0       |       |
+| f_wall_pct            | double      | YES  |     | 0       |       |
+| f_num_tasks           | int(11)     | YES  |     | 0       |       |
+| f_time_task_dist      | blob        | YES  |     | NULL    |       |
+| f_num_calls_task_dist | blob        | YES  |     | NULL    |       |
++-----------------------+-------------+------+-----+---------+-------+
+19 rows in set (0.00 sec)
+
+mysql> desc ipm_summary;
++-----------+-------------+------+-----+---------+-------+
+| Field     | Type        | Null | Key | Default | Extra |
++-----------+-------------+------+-----+---------+-------+
+| stepid    | varchar(64) |      | PRI |         |       |
+| name      | varchar(64) |      | PRI |         |       |
+| timestamp | bigint(20)  |      | PRI | 0       |       |
+| sum       | double      | YES  |     | NULL    |       |
+| avg       | double      | YES  |     | NULL    |       |
+| sd        | double      | YES  |     | NULL    |       |
+| min       | double      | YES  |     | NULL    |       |
+| max       | double      | YES  |     | NULL    |       |
+| dist      | blob        | YES  |     | NULL    |       |
++-----------+-------------+------+-----+---------+-------+
+9 rows in set (0.00 sec)
+
+mysql> desc hw_counters;
++-------------+-------------+------+-----+---------+-------+
+| Field       | Type        | Null | Key | Default | Extra |
++-------------+-------------+------+-----+---------+-------+
+| stepid      | varchar(16) |      | PRI |         |       |
+| timestamp   | bigint(20)  |      | PRI | 0       |       |
+| c_name      | varchar(64) |      | PRI |         |       |
+| c_avg       | double      | YES  |     | NULL    |       |
+| c_sum       | double      | YES  |     | NULL    |       |
+| c_sd        | double      | YES  |     | NULL    |       |
+| c_min       | double      | YES  |     | NULL    |       |
+| c_max       | double      | YES  |     | NULL    |       |
+| c_task_dist | blob        | YES  |     | NULL    |       |
++-------------+-------------+------+-----+---------+-------+
+9 rows in set (0.00 sec)
+

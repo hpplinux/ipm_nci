@@ -1,0 +1,9 @@
+#ulimit -c unlimited
+#LD_PRELOAD=../lib/libipm.so ./xapp_hello
+
+if [ "$PMI_RANK" == "0" ] ; then
+#valgrind -v --leak-check=full --show-reachable=yes --tool=memcheck $1
+valgrind -v --tool=massif $1
+else 
+$1
+fi

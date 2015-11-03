@@ -1,0 +1,57 @@
+#!/bin/sh -x 
+
+WGET=`which wget`
+TARBALL=ipm-nightly.tar
+URL=http://www.nersc.gov/~dskinner/$TARBALL
+HOST=`hostname`
+EMAIL=dskinner@nersc.gov
+TEST_LOG="nightly.log"
+TEST_EMAIL="dskinner@nersc.gov"
+
+if [ "$HOST" == "lego" ] ; then 
+ export MACH=lego;
+ export NIGHTLY_TASKS="lego test";
+fi
+
+if [ "$HOST" == "jdvin01" ] ; then
+ export MACH=jacquard;
+ export NIGHTLY_TASKS="jacquard test";
+fi
+
+if [ "$HOST" == "davinci" ] ; then
+ export MACH=davinci;
+ export NIGHTLY_TASKS="davinci test";
+fi
+
+if [ "$HOST" == "d200109-en0.nersc.gov" ] ; then
+ export MACH=seaborg;
+ export NIGHTLY_TASKS="ibm test";
+fi
+
+
+rm -rf ipm-nightly ipm-nightly.tar ipm-nightly.tar.*
+$WGET $URL
+tar -xf $TARBALL
+
+cp ipm-nightly/bin/ipm-nightly-tester ~/bin
+
+chmod a+rx ~/bin/ipm-nightly-tester
+
+cd ipm-nightly
+ 
+mv make_config make_config.orig
+awk '{if($1 ~ "^MACH="){print "MACH="ENVIRON["MACH"]} else {print $0}}' make_config.orig > make_config
+
+rm -f $TEST_LOG
+echo TEST_BEGIN `date` > $TEST_LOG
+for task in $NIGHTLY_TASKS ; do
+ gmake $task >> $TEST_LOG
+done
+
+echo TEST_END `date` >> $TEST_LOG
+
+cat $TEST_LOG | mail -s "ipm:nightly-test $MACH" $TEST_EMAIL 
+cd ..
+#rm -rf ipm-nightly ipm-nightly.tar 
+
+

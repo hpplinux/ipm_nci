@@ -1,0 +1,45 @@
+<pre>
+<machine name="seaborg.nersc.gov" nodes=384 mode="default">
+<node name="NHII" type="SMP" ncpus="16">
+<cpu name="pwr3" speed="375Mhz" inst_per_cyc=<"2">POWERIII</cpu>
+
+<metrics>
+<metric name="Giga Flop per second" sname="GFlops" units="GFLOP/S" type="double">
+ <calc dep_var="hpm(PMAPI),perf">(PM_FPU0_CMPL + PM_FPU1_CMPL + PM_EXEC_FMA)/WTIME</calc>
+ <calc dep_var="hpm(PAPI),perf">(PAPI_FP_OPS + PAPI_FML_INS)/WTIME</calc>
+</metric>
+
+<metric name="Computational Intensity" sname="Comp_Intens" units="none" type="percent">
+ <calc dep_var="hpm(PMAPI),node">(PM_INST_CMPL/(PM_CYC*inst_per_cyc)</calc>
+ <calc dep_var="hpm(PAPI),node">(PAPI_TOT_INS/(PAPI_TOT_CYC*inst_per_cyc)</calc>
+</metric>
+
+</metrics>
+
+<interconnect name="colony US" type="fat-tree">
+<inter latency="23.4"> </inter>
+<intra latency="9.2"> </intra>
+<mpi tasks=16 tasks_per_node=16>
+<call="MPI_Reduce"  bytes="1" time="0.0001"> </call>
+<call="MPI_Reduce"  bytes="2" time="0.0001"> </call>
+<call="MPI_Reduce"  bytes="4" time="0.0004"> </call>
+<call="MPI_Reduce"  bytes="8" time="0.0004"> </call>
+<call="MPI_Reduce"  bytes="16" time="0.0005"> </call>
+<call="MPI_Reduce"  bytes="32" time="0.0005"> </call>
+...
+</mpi>
+<mpi tasks=32 tasks_per_node=16>
+<call="MPI_Reduce"  bytes="1" time="0.0001"> </call>
+<call="MPI_Reduce"  bytes="2" time="0.0001"> </call>
+<call="MPI_Reduce"  bytes="4" time="0.0004"> </call>
+<call="MPI_Reduce"  bytes="8" time="0.0004"> </call>
+<call="MPI_Reduce"  bytes="16" time="0.0005"> </call>
+<call="MPI_Reduce"  bytes="32" time="0.0005"> </call>
+...
+</interconnect>
+</machine>
+
+<machine name="bgl.llnl.gov" nodes=65536 mode="coprocessor">
+...
+</machine>
+</pre>

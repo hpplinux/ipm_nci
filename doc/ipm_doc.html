@@ -1,0 +1,351 @@
+<html>
+<body>
+
+[DRAFT]
+
+<H2> IPM: Integrated Performance Monitoring </H2>
+
+<a name="top"><H3> Overview </H3></a>
+
+<p>
+IPM is a portable profiling infrastructure for parallel codes. It provides a low-overhead performance summary of the computation and communication in a parallel program.
+The amount of detailed reported
+is selectable at runtime via environment variables or through a MPI_Pcontrol interface.
+ IPM has extremely low overhead, is scalable and easy to use requiring no source code modification. 
+</p>
+
+<p>
+IPM runs on IBM SP's, Linux clusters using MPICH, Altix, SX6,
+and the Earth Simulator. IPM is available under an Open Source software license. 
+</p>
+
+<p>
+IPM brings together several types of information important to developers and users of parallel HPC codes. The information is gathered in a way the tries to minimize the impact on the running code, maintaining a small fixed memory footprint and using minimal amounts of CPU. When the profile is generated the data from individual tasks is aggregated in a scalable way.
+</p>
+<p>
+The monitors that IPM currently integrates are:
+</p>
+
+<ul>
+<li> MPI: communication topology and statistics for each MPI call and buffer size.
+<li> HPM: PAPI (many) or PMAPI (AIX) performance events.
+<li> Memory: wallclock, user and system timings
+<li> Switch: Communication volume and packet loss 
+</ul>
+
+</p>
+
+<p> The 'integrated' in IPM is multi-faceted. It refers to binding the above information together 
+through a common interface and also the integration of the records from all the parallel tasks into a single report.
+
+On some platforms IPM can be integrated into
+the execution environment of a parallel computer.
+
+In this way IPM profiling is available either automatically or with very litte effort. The final level of 
+integration is the collection of individual performance profiles into a 
+database which synthesizes the performance reports via a web interface. 
+This web interface can be used by all those concerned with parallel code 
+performance, namely users, HPC consultants, and HPC center managers. 
+</p>
+
+<p>
+ Background and Using IPM:
+<ul>
+<li> <a href="#pvt">Profiling vs. Tracing </a>
+<li> <a href="#using">Using IPM</a>
+<li> <a href="#interfaces">Interfaces</a>
+<li> <a href="#snap">Snapshot Tracing</a>
+<li> <a href="#download">Download </a>
+</ul>
+</p>
+More detailed information about how IPM works:
+<ul>
+<li> <a href="#hash">Hashing Strategy</a>
+<li> <a href="#data">Working with IPM data</a>
+<li> <a href="#log">Log File Format</a>
+<li> <a href="#links">Links, References, Misc. </a>
+</ul>
+<hr>
+
+<a name="pvt"><H3> Profiling vs. Tracing </H3></a>
+<p>
+ Performance events include HPM counts from on chip counters, memory usage 
+events, and timings of routines such as message passing.
+</p>
+<p>
+The space in which performance events occur is roughly two dimensional. Events occur at some "place" and at some time. The place might be a nodename or cpu number. It could be a context, e.g., a callsite or program counter value. The event also happens at or over some time. 
+</p>
+
+<p>
+A <b>profile</b> ignores the chronology of the events in an absolute sense. Nothing
+is timestamped and the resulting report does not say what events happened 
+before other events. 
+</p>
+
+<p>
+A <b>trace</b> records the chronology, often with timestamps and is extensive in time. 
+The amount of data int he trace increases with the runtime. As such in order to bound the memory usage by the tracing one must periodically write the data out
+to disk or network. 
+
+ either run for very short time.
+</p>
+
+<p>
+The distinction between profiling and tracing that is 
+sometimes overlooked when choosing a tool to extract performance information from a parallel code. Typically a trace is useful for detailed examination of 
+timing issues occurring within a code. A profile is often sufficient to
+pinpoint load imbalance due to problem decomposition and/or identify the origin
+of excessive communication time. 
+
+</p>
+
+<p> IPM aims toward detailed profiling rather than tracing. It records basic
+statistics on the performance events as they occur. In most cases these statistics are min, max and total timings of the event. The timings are stored in a fixed size hash table which is keyed off of a description of the event. The description is based on a small number of parameters. For MPI calls these parameters
+are things like the name of the MPI call, the buffer size, the source/destination rank, etc. 
+</p>
+
+<p>
+Here are two quick examples showing the MPI profile data collected by IPM on a single task (rank 0) of two parallel codes:
+</p>
+
+<p>
+Blocked dense ScaLAPACK code run on 16 tasks:
+<pre>
+call        orank      ncalls  buf_size   t_tot    t_min   t_max   %comm
+MPI_Recv        2         17     131072 5.96e+00 6.43e-02 5.92e-01  75.5
+MPI_Recv        7         18          4 1.82e+00 8.45e-06 4.17e-01  23.0
+MPI_Barrier     *          2          * 1.04e-01 7.14e-05 1.03e-01   1.3
+MPI_Sendrecv    8         18        504 4.56e-03 6.31e-05 3.19e-04   0.1
+MPI_Send        1         36          4 1.84e-03 1.75e-05 1.62e-04   0.0
+MPI_Sendrecv   16         18        504 1.55e-03 3.18e-05 2.80e-04   0.0
+</pre>
+</p>
+
+<p>
+ Here orank means "the other rank" which may be a source or destination for 
+data in the message. 
+</p>
+
+<p>
+Conjugate gradient on 32 tasks
+<pre>
+call        orank      ncalls  buf_size   t_tot    t_min   t_max   %comm
+MPI_Wait        4       3952          8 3.93e+00 3.93e-06 8.33e-02  39.4
+MPI_Send        1       1976      75000 1.54e+00 5.76e-04 1.23e-02  15.4
+MPI_Send        4       1976      75000 1.33e+00 4.68e-04 1.18e-02  13.4
+MPI_Send        2       1976      75000 1.27e+00 4.53e-04 5.45e-03  12.7
+MPI_Wait        2       3952          8 1.00e+00 3.93e-06 7.92e-02  10.1
+MPI_Wait        1       3952          8 3.04e-01 3.70e-06 2.51e-02   3.0
+MPI_Send        0       1976      75000 1.32e-01 6.39e-05 1.39e-04   1.3
+MPI_Wait        4       1976      75000 9.17e-02 4.41e-06 5.11e-04   0.9
+MPI_Send        4       3952          8 5.35e-02 9.43e-06 1.19e-04   0.5
+MPI_Irecv       1       1976      75000 4.71e-02 1.75e-05 1.01e-04   0.5
+MPI_Send        2       3952          8 4.18e-02 7.06e-06 4.69e-05   0.4
+MPI_Send        1       3952          8 4.10e-02 7.75e-06 8.72e-05   0.4
+MPI_Wait        2       1976      75000 3.36e-02 4.41e-06 4.24e-04   0.3
+MPI_Wait        1       1976      75000 2.64e-02 1.02e-05 4.14e-04   0.3
+MPI_Irecv       2       1976      75000 2.59e-02 6.38e-06 8.01e-05   0.3
+MPI_Irecv       4       3952          8 2.57e-02 5.64e-06 2.01e-04   0.3
+</pre>
+</p>
+
+
+<p>
+From such a profile, one does not know the order in which the above events happened.
+In many cases knowing that 37% of the communication time was spent in a 131KB MPI_Recv is sufficient information to make the next step of code examination 
+and improvement. For scaling studies the above information can be quite useful. 
+</p>
+
+<p> In some cases more programnatic or chronological context of the performance events is needed. IPM includes two interfaces through which detailed information may be recorded. 
+<ul>
+<li> <a href="#regions">Code regions</a> may be defined. This allows for seperate profiles of individual code sections and provides the possibility of greater resolution. Regions 
+are implemented through MPI_Pcontrol so while code changes are required,
+these code changes present no build or execute conflicts is IPM is not used. 
+<li> <a href="#snap">Snapshot tracing</a> may be done independent of the profiling. Either at execute time or through MPI_Pcontrol the user may arrange for a fixed size buffer to be 
+filled with a timestamped trace of all or selected events. When the buffer
+fills or tracing is turned off the trace buffer is written out. 
+</ul>
+</p>
+
+<br>
+<a name="using"><H3> Using IPM </H3></a>
+
+<a name="interfaces"><H3>Interfaces </H3></a>
+<p>
+IPM is controlled via environment variables and through MPI_Pcontrol.
+
+<H3>Environment Variables</H3>
+<table class="ntable">
+<tr>
+ <th>Variable</th> <th>Values</th> <th>Description</th>
+</tr>
+<tr>
+<td> IPM_REPORT </td> <td> terse </td>
+
+	<td>
+(default) Aggregate wallclock time, memory usage and flops are reported along with the percentage of wallclock time spent in MPI calls.
+	</td>
+</tr>
+<tr>
+<td> &nbsp; </td> <td> full </td>
+	<td> Each HPM counter is reported as are all of wallclock, user, system, and MPI time. The contribution of each MPI call to the communication time is 
+given.
+	</td>
+</tr>
+
+<tr>
+<td> &nbsp; </td> <td> none </td>
+	<td> No report </td>
+</tr>
+<tr>
+<td> IPM_MPI_THRESHOLD </td> <td> 0.0 &#60; x &#60; 1.0  </td>
+
+	<td>
+	Only report MPI routines using more than x% of the total MPI time.
+	</td>
+
+</tr>
+<tr>
+<td> IPM_HPM </td> <td> 1,2,3,4,scan  </td>
+	<td>
+	POWER3 allows four different event sets. Use this environment variable to pick the event set or select scan to use different event sets on different tasks. Using the scan option allows greater coverage of the HPM counters but for
+codes with load imbalance or MPMD models uniform sampling may be more accurate.
+The scan option extrapolates the to full totals based on the sampled event sets. 
+
+	</td>
+
+</tr>
+
+</table>
+
+<H3> MPI_Pcontrol </H3>
+
+<p>
+The first argument to MPI_Pcontrol determines waht action will be taken by IPM.
+</p>
+
+<table class="ntable">
+<tr>
+ <th>Arguments</th> <th>Description</th>
+</tr>
+<tr>
+<td> 1,"label" </td> <td> start code region "label" </td>
+</tr>
+<tr>
+<td> -1,"label" </td> <td> exit code region "label" </td>
+</tr>
+<tr>
+<td> 0,"label" </td> <td> invoke custom event "label" </td>
+</tr>
+</table>
+
+<p>
+Defining code regions and events:
+</p>
+<pre>
+       C                                     FORTRAN
+MPI_Pcontrol( 1,"proc_a");           call mpi_pcontrol( 1,"proc_a//0")
+MPI_Pcontrol(-1,"proc_a");           call mpi_pcontrol(-1,"proc_a//0")
+MPI_Pcontrol( 0,"tag_a");            call mpi_pcontrol(0,"tag_a//0")
+MPI_Pcontrol( 0,"tag_a");            call mpi_pcontrol(0,"tag_a//0")
+
+</pre>
+<p>
+tracing
+</p>
+</pre>
+MPI_Pcontrol( 2,"MPI_Wait:trace");   call ipm_pcontol( 2,"MPI_Wait:trace//0)
+MPI_Pcontrol( -2,"MPI_Wait:trace");  call ipm_pcontol(-2,"MPI_Wait:trace//0)
+
+</p>
+
+<p>
+on platforms that do not support MPI_Pcontrol
+</p>
+
+<pre>
+       C                                     FORTRAN
+ipm_start("region1");                call ipm_start("region1//0")
+...code...                           ...code...
+ipm_stop("region1");                 call ipm_stop("region1//0")
+ipm_event("tag");                    call ipm_event("tag//0")
+ipm_trace(1,"call1,call2,..");       call ipm_trace(1,"call1,call2,...//0")
+ipm_trace(0,"call1,call2,..");       call ipm_trace(0,"call1,call2,...//0")
+
+</pre>
+
+<a name="#snap"><H3>Snapshot Tracing</H3></a>
+
+<p> Real documentation coming soon...</p>
+<p> Basic idea: </p>
+<pre>
+
+ IPM_MPI_TRACE=call:MPI_Reduce, region:label(it_i-it_j), time:(t1-t2)
+      call:MPI_function -> trace all calls to MPI_function
+      region:region_label(it1-it2) -> trace all call in region_label
+      time:(t1-t2) -> trace all calls from MPI_Init+t1 until MPI_Init+t2
+
+</pre>
+<a name="#download"><H3>Download</H3></a>
+<p>
+Still working on this. Contact dskinner@nersc.gov for information.
+</p>
+
+<hr>
+
+<a name="hash"><H3> Hashing Strategy </H3></a>
+
+IPM uses a fixed size hash to store event information. The hashing strategy aims
+at making inserts with very low overhead (in terms of CPU time). Double open-address hashing is currently used.  For each event the region, call, rank, and buffer size are stroed in a 64bit integer key. The hash maps this key in a roughly deterministic and roughly uniform way to a number between 0 and MAXSIZE_HASH-1, where MAXSIZE_HASH is a prime number. The default size is 32573. In practice fewer than the maximum number of entries should be stored in the hash since the number of collisions increases as the hash becomes full. 
+
+
+<p>
+For example the event -> key -> hkey  mapping for MPI events is as follows:
+</p>
+
+<p>
+A key (64 bit int) is generated from the description of the event:
+</p>
+<pre>
+#define IPM_MPI_HASH_KEY(key,region,call,rank,size) {  \
+ key = region; key = key << 8; \
+ key |= call;  key = key << 16; \
+ key |= rank;  key = key << 32; \
+ key |= size;  \
+}
+</pre>
+<p> A hash table index, hkey, is computed from the key</p>
+<pre>
+ hkey = (key%MAXSIZE_HASH+collisions*(1+key%(MAXSIZE_HASH-2)))%MAXSIZE_HASH
+</pre>
+<p>
+<img src="../img/hasvdhash.gif">
+</p>
+
+<p>
+<pre>
+typedef struct ipm_hash_ent {
+ IPM_KEY_TYPE key;
+ IPM_COUNT_TYPE count;
+ double t_tot, t_min, t_max;
+} ipm_hash_ent;
+</pre>
+</p>
+
+<a name="log"><H3> Log File Format </H3></a>
+
+The IPM log files are written in an ASCII format that roughly follows XML. The goal is to make a concise format that is easily parsed.
+
+<a name="links"><H3> Links, References, Misc. </H3></a>
+<ul>
+<li> View job performance stats <a href="https://www.nersc.gov/nusers/status/llsum/poe_plus.php">online</a>. (seaborg users only)
+<li> <a href="http://www.spscicomp.org/ScicomP10/abstracts.html#skinner">"MPI Application and Library Performance"</a> - David Skinner
+<li> <a href="http://www.spscicomp.org/ScicomP10/abstracts.html#jones">"Survey of MPI Call Usage"</a> - Terry Jones
+<li> MPI profiling on the <a href= "http://www.hlrs.de/organization/par/services/models/mpi/mpi_t3e.html#profiling">T3E</a>
+<li> <a href="http://www.netlib.org/utk/papers/mpi-book/node182.html">PMPI Interface</a>
+</ul>
+
+
+</body>
+</html>
+

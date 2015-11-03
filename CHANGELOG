@@ -1,0 +1,91 @@
+0.980 Intended phase out version toward IPM 2.0 (different source base) 
+
+0.923 Nick fixed OpenMPI bug
+
+0.922
+removed IPM_HPM_DISABLED in favor of NOOP when there is no HPM
+merged KEYHISTORY and CALLSITE into PROFLOW (profile programm flow)
+
+0.918
+initial configure script 
+created ipm_init which works for MPI or serial codes
+moved region_current into taskdata struct
+added autobuild.sh for www.autobuild.org sw processes
+
+0.916
+introduced IPM_LOG= interface (full,terse,none)
+log files now do _not_ by default have full hash (<hent>) data
+
+0.915 
+fixed read_realtime (AIX) timer overflow (nwright) 
+
+0.914
+allowed for call masks that truncate buffersizes
+
+0.9122
+added KEY_MASK_NORANK to use sign bit from buffer size to accept negative ranks
+such as MPI_ANY_SOURCE, etc. (-1,-2)
+
+0.912
+initial IO profiling (not part of libipm.a yet)
+
+0.911
+initial IPM_ENABLE_KEYHIST code working. 
+ALTIX FMA instruction removed
+
+0.910 
+cleanup to mpi_key
+IPM_MPI_SANITY phased out
+
+0.907
+exapaned hash to 256 regions
+removed communicator tracking
+moved more non-mpi code out of perl into C
+
+0.898
+fixed delayed entry to first region HPM bug
+check for input of ipm_noregion --> my_ipm_noregion
+removed popen from execinfo
+restructured static C code out of make_lib_topo (partly)
+
+0.895: 
+fixed language cross link issues with AIX/PE : now use rebuild_libmpi
+
+0.85 :
+fixed multiple copies of hash in log with regions
+
+0.84 : 
+re-fixed IPM_DISABLE_SYSLOG
+re-engineered make to allow multiple make_lib variants, e.g. tiny
+added slop buckets to avoid hash overflow
+
+0.83 :
+added aggregation through /tmp
+inter/intra per host ring addedd
+
+0.82 :
+fixed bug with MPI_ANY_SOURCE (-1) 
+fixed/tested switch bytes_tx/rx
+tested tracing 
+
+0.8 : 
+first seaborg library in major test by crd and ftg
+added central system wide logging 
+added tracing
+
+0.7 :
+had problems
+
+0.6 : 
+added regions through ipm_start and ipm_stop
+added aix/ directory with library rebuild scripts for MP_EUILIBPATH
+
+0.5 :
+completely redid aggregation 
+
+0.3
+fixed hash_merge to flatten regions in global report
+added xbench tester for measuring profiling overhead
+
+
+

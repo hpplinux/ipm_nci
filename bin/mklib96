@@ -1,0 +1,42 @@
+#!/usr/bin/bash
+TAG=tmp
+
+if [ $# -ne "3" ] ; then
+
+ echo "usage: mklib96 lib32.a lib64.a joinedlib.a"
+ echo "       Merges a 32 and a 64 bit library into a single 32 and"
+ echo "       64 bit joined library named joinedlib.a"
+ echo "       The file joinedlib.a is overwritten"
+ exit 1
+fi
+
+echo `ar -X 32 -w $1 | wc -l`"  -- 32 bit objects in "$1
+echo `ar -X 64 -w $2 | wc -l`"  -- 64 bit objects in "$2
+
+echo " "
+echo "creating $3 ..."
+echo " "
+
+rm -rf $TAG"32" $TAG"64"
+
+mkdir $TAG"32"
+for file in `ar -X 32 -t $1` ; do
+ (cd $TAG"32"; ar -X 32 -x ../$1 $file )
+# echo ar -X 32 -q $3  $TAG"32"/$file
+ ar -X 32 -q $3  $TAG"32"/$file
+ rm -rf $TAG"32"/$file
+done
+
+mkdir $TAG"64"
+for file in `ar -X 64 -t $2` ; do
+ (cd $TAG"64"; ar -X 64 -x ../$2 $file )
+# echo ar -X 64 -q $3  $TAG"64"/$file
+ ar -X 64 -q $3  $TAG"64"/$file
+ rm -rf $TAG"64"/$file
+done
+
+rm -rf $TAG"32" $TAG"64"
+
+echo "done."
+
+

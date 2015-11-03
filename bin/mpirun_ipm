@@ -1,0 +1,76 @@
+#!/bin/sh
+
+#
+# mpirun wrapper for IPM - dskinner@nersc.gov (Feb 2006)
+#
+# 1) Write the command to a script with an LD_PRELOAD in it.
+#    mpirun the script to get LD_PRELOAD to the parallel env
+#
+# 2) relink executable
+#
+# ALTIX : 1
+#
+
+ARCH=ALTIX
+
+STRATEGY=1
+TMP="none"
+
+if [ "$ARCH" == "ALTIX" ] ; then 
+ LD_PRELOAD_IPM="export LD_PRELOAD=$IPM_ROOT/lib/libipm.so"
+ STRATEGY=1
+ REAL_MPIRUN=/usr/bin/mpirun
+ TMP=".ipm_run."`/bin/date +%s`
+ NP="-np"
+fi
+
+if [ "$ARCH" == "LINUX" ] ; then 
+ STRATEGY=1
+ REAL_MPIRUN=/usr/local/bin/mpiexec
+ REAL_MPIRUN=/usr/common/usg/bin/mpiexec
+ TMP=".ipm_run."`/bin/date +%s`
+ NP="-n"
+fi
+
+if [ "$TMP" == "none" ] ; then 
+ TMP=$$
+fi
+
+if [ $STRATEGY -eq 1 ] ; then 
+
+ntasks=1
+PAR_CMD=""
+ntasks_is_next=0
+for i in "$@" ; do
+ n=`expr $n + 1`
+# echo $n":"$#" --> \""$i"\"" $NP
+ if [ $ntasks_is_next -eq -1 ] ; then 
+  PAR_CMD=$PAR_CMD" ""$i"
+ fi
+ if [ $ntasks_is_next -eq 1 ] ; then 
+  ntasks=${!n}
+  ntasks_is_next=-1
+ fi
+ if [ "$i" == "$NP" ] ; then 
+  ntasks_is_next=1
+ fi
+done
+
+echo "##############################################################################"
+echo " "
+echo "Executing with IPM" 
+echo $REAL_MPIRUN " " $NP " " $ntasks $PAR_CMD
+echo " "
+echo "##############################################################################"
+echo " "
+
+rm -f $TMP
+echo $LD_PRELOAD_IPM > $TMP
+echo $PAR_CMD        >> $TMP
+chmod +x $TMP
+$REAL_MPIRUN $NP $ntasks ./$TMP
+rm -f $TMP
+
+fi
+
+

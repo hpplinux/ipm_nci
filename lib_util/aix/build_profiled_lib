@@ -1,0 +1,35 @@
+#!/bin/ksh
+# build_profiled_lib
+echo "Step 0: create libipm.c containing profiling routines, and compile it
+to libipm.o"
+#mpcc_r -c libipm.c
+ar vx libipm.a
+
+nm ./libipm.o  | awk '($2=="T")' | grep -v ipm_ | grep MPI_ | awk '{print $1}' | sed -e 's/\.//' > libipm.exp
+
+ld -o newlibipm.o libipm.o -bM:SRE -H512 -T512 -bnoentry -bE:libipm.exp -lc -lmpi -L/usr/lpp/ppe.poe/lib
+ 
+mv newlibipm.o libipm.o
+
+echo "Step 1: run rebuild_mpi, creating export files and libmpi_X.a"
+ rebuild_mpi
+
+echo "Step 2: recreate mpicore_r.o shared object, incorporating libipm.o"
+ld -o mpicore_r.o libipm.o -bM:SRE -H512 -T512 -bnoentry -bE:mpicore_r.exp -lc -lmpi_X -L. -L$ORGIMPIPATH/lib -lpthreads $USE_PMAPI
+
+echo "Step 2.5: recreate mpifort_r.o shared object, incorporating libipm.o"
+ld -o mpifort_r.o libipm.o -bM:SRE -H512 -T512 -bnoentry  -bE:mpifort_r.exp -lc -lmpi_X -L. -L$ORGIMPIPATH/lib -lpthreads $USE_PMAPI
+
+echo "Step 3: recreate mpipoe_r.o shared object"
+ld -o mpipoe_r.o -bM:SRE -H512 -T512 -bnoentry -bE:mpipoe_r.exp -lc -lmpi_X -L. -L$ORGIMPIPATH/lib -lpthreads $USE_PMAPI
+
+echo "Step 4: recreate dynamic.o shared object"
+ld -o dynamic.o -bM:SRE -H512 -T512 -bnoentry  -bE:libvtd_r.exp -lc -lmpi_X -L. -L$ORGIMPIPATH/lib -lpthreads $USE_PMAPI
+
+echo "Step 5: recreate the libmpi_r.a archive with these new shared objects"
+rm -f libmpi_r.a
+ar rv libmpi_r.a mpicore_r.o mpifort_r.o dynamic.o mpipoe_r.o mpicpp_r.o
+mkdir 32
+mv *.a 32
+#rm mpicore_r.o mpifort_r.o dynamic.o mpipoe_r.o
+ # End of build_profiled_lib

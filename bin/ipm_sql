@@ -1,0 +1,33 @@
+#!/bin/sh
+
+set -x
+
+USER=`whoami`
+
+EXENAME=/usr/common/usg/ipm/scripts/ipm_parse
+#EXENAME=~ragerber/cvs/seaborg/ipm/scripts/ipm_parse
+
+if [ -n "$1" ]; then
+	USER=$1
+	CTIME=""
+	UOUT=$1
+fi		
+
+if [ "$USER" = "all" ]; then
+	USER="[a-z]*"
+	CTIME="-ctime -1"
+	UOUT="all"	
+fi
+
+#echo U: $USER
+
+CWD=`pwd`
+
+cd  /scratch/scratchdirs/consult/log/ipm/
+
+/usr/common/usg/gnu/tbin/gfind . -cnewer lastsql."$UOUT" -name "$USER".[0-9]\* -printf "%f\n" | /usr/common/usg/gnu/tbin/gxargs -i $EXENAME {} /usr/common/usg/ipm/sql/ipm."$UOUT".sql
+#/usr/common/usg/gnu/tbin/gfind . -cnewer lastsql."$UOUT" -name "$USER".[0-9]\* -printf "%f\n" 
+
+touch lastsql."$UOUT"
+
+cd $CWD

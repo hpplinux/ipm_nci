@@ -1,0 +1,9 @@
+#!/bin/sh
+
+#
+# The modules environment for setting and unsetting software settings is 
+# an ideal way to deploy IPM on many architectures. If that's not 
+# available then this script might work for you. 
+
+MACH=ALTIX
+

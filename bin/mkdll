@@ -1,0 +1,11 @@
+#!/bin/sh
+
+
+rm -rf tmp_sh
+mkdir tmp_sh
+cd tmp_sh
+ar xv ../$1
+ld -shared -o libipm.so.1.0 *.o
+cp libipm.so.1.0 ..
+cd ..
+rm -rf tmp_sh

@@ -1,0 +1,21 @@
+#!/usr/bin/bash
+
+TMP=.tmp.$$
+
+rm -rf $TMP
+mkdir $TMP
+cd $TMP
+
+ar x $1
+
+OBJ=`ls`
+
+for o in $OBJ ; do
+ export ONAME=$o
+ dump -Tv $o 2>&1  | awk '{print ENVIRON["ONAME"], $0}' 
+done
+
+cd ..
+
+rm -rf $TMP
+

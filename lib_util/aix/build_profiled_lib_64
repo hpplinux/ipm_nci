@@ -1,0 +1,29 @@
+#!/bin/ksh
+# build_profiled_lib
+echo "Step 0: create libipm.c containing profiling routines, and compile it
+to libipm_64.o"
+export OBJECT_MODE=64
+ar -X 64 vx libipm.a
+
+echo "Step 1: run rebuild_mpi, creating export files and libmpi_X.a"
+rebuild_mpi_64
+
+echo "Step 2: recreate mpicore64_r.o shared object, incorporating libipm_64.o"
+ld  -o mpicore64_r.o libipm_64.o -bM:SRE -H512 -T512 -bnoentry -bE:mpicore64_r.exp -lc -lmpi_X -L. -L$ORGIMPIPATH/lib -lpthreads $USE_PMAPI
+
+echo "Step 2.5: recreate mpifort64_r.o shared object, incorporating libipm_64.o"
+ld -o mpifort64_r.o libipm_64.o -bM:SRE -H512 -T512 -bnoentry  -bE:mpifort64_r.exp -lc -lmpi_X -L. -L$ORGIMPIPATH/lib -lpthreads $USE_PMAPI
+
+echo "Step 3: recreate mpipoe64_r.o shared object"
+ld -o mpipoe64_r.o -bM:SRE -H512 -T512 -bnoentry -bE:mpipoe64_r.exp -lc -lmpi_X -L. -L$ORGIMPIPATH/lib -lpthreads  $USE_PMAPI
+
+echo "Step 4: recreate dynamic64_r.o shared object"
+ld -o dynamic64_r.o -bM:SRE -H512 -T512 -bnoentry  -bE:libvtd64_r.exp -lc -lmpi_X -L. -L$ORGIMPIPATH/lib -lpthreads $USE_PMAPI
+
+echo "Step 5: recreate the libmpi64_r.a archive with these new shared objects"
+rm -f libmpi_r.a
+ar rv libmpi_r.a mpicore64_r.o mpifort64_r.o dynamic64_r.o mpipoe64_r.o mpicpp64_r.o
+mkdir 64
+mv *.a 64
+#rm mpicore64_r.o mpifort64_r.o dynamic.o mpipoe64_r.o
+ # End of build_profiled_lib

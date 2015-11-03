@@ -1,0 +1,97 @@
+#!/usr/bin/perl
+
+#open(FH, "awk '(NF==7)' $ARGV[0] |  egrep " MPI_| TOTAL " |") or die("can't open file $1\n"); 
+open(FH, "< $ARGV[0]") or die("can't open file $1\n"); 
+
+#   0 1.00805e+02 ipm_global 2.71947e+00 MPI_Barrier          4 8.58693e-03
+
+$size = 0;
+%r_mpit = ();
+
+sub stats {
+ my(@v) = @_;
+ my $n = 0;
+ my $tot = 0.0;
+ my $min = 999999999999.00;
+ my $max = 0.0;
+ my $xbar = 0.0;
+ my $cov = 0.0;
+ my $var = 0.0;
+ my $sig = 0.0;
+ my $ii=0;
+
+ $n = 0;
+ for ($ii = 0; $ii < @v; $ii++) {
+ $n++;
+ $tot += $v[$ii];
+ if($n==1) {$max = $v[$ii]; $min = $v[$ii];}
+ if($v[$ii] > $max) { $max = $v[$ii];}
+ if($v[$ii] < $min) { $min = $v[$ii];}
+ }
+ 
+if($n<=0) {
+ $xbar = -1.0;
+} else {
+ $xbar = $tot/$n;
+}
+ 
+ for ($ii = 0; $ii < @v; $ii++) {
+  $var += ($v[$ii]-$xbar)*($v[$ii]-$xbar);
+ }
+ 
+if($n==1 || $xbar <= 0.0) { 
+ $sig = -1.0;
+ $cov = -1.0;
+} else {
+ $sig = sqrt($var/($n-1));
+ $cov = $sig/$xbar;
+}
+
+ printf("%4d %10.2f %7.2f %7.2f %12.4f", $n,$xbar,$min,$max,$cov);
+
+ return 0;
+}
+
+
+while($line = <FH>) {
+ if($line =~ /^\s+(\d+)\s+([.0-9e+-]+)\s+(\w+)\s+([.0-9e+-]+)\s+(\w+)\s+(\d+)\s+([.0-9e+-]+)/) {
+  if($1> $size) { $size = $1; }
+#  print "$1 $2 $3 $4 $5 $6 $7\n";
+  $rank = $1;
+  $j_wall[$rank] = $2;
+  $region = $3;
+  if(!defined($r_mpit{$region})) {
+   @r_mpit{$region}  = ();
+  } 
+  $wall_time = $4;
+  $call = $5;
+  $count = $6;
+  $call_time = $7;
+#  print "$rank $j_wall[$rank] $region $reg_wall $5 $6 $7\n";
+  if($5 =~ /TOTAL/) {
+   $r_wallt{$region}[$rank] = $wall_time;
+   $r_mpit{$region}[$rank] = $call_time;
+  } 
+ }
+}
+
+$size++;
+
+print "region_label                     ntasks    avg     min     max       cov\n";
+printf("%-25.25s      ","job_wall"); stats(@j_wall); print "\n";
+
+foreach $i (keys %r_mpit) {
+ for ($j=0; $j <= $#{$r_mpit{$i}}; $j++) {
+#  print "r_mpit $i $j $r_mpit{$i}[$j]\n";
+ }
+}
+
+for $reg (keys (%r_mpit)) {
+ printf("%-25.25s wall ",$reg);
+ $rv = stats(@{$r_wallt{$reg}});
+ print "\n";
+ printf("%-25.25s mpi  ",$reg);
+ $rv = stats(@{$r_mpit{$reg}});
+ print "\n";
+}
+

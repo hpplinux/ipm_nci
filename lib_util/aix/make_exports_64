@@ -1,0 +1,26 @@
+#! /bin/ksh
+# make_exp_64orts
+echo "Making export list for mpci64_r.o"
+echo "#! libmpi_X.a(mpci_X.o)" > mpci64_r.exp
+make_exp_64 mpci64_r.o >> mpci64_r.exp
+echo "Making export list for mpicore64_r.o"
+echo "#! libmpi_X.a(mpicore_X.o)" > mpicore64_r.exp
+make_exp_64 mpicore64_r.o >> mpicore64_r.exp
+echo "Making export list for mpipoe64_r.o"
+echo "#! libmpi_X.a(mpipoe_X.o)" > mpipoe64_r.exp
+make_exp_64 mpipoe64_r.o >> mpipoe64_r.exp
+echo "Making export list for mpicpp64_r.o"
+echo "#! libmpi_X.a(mpicpp_X.o)" > mpicpp64_r.exp
+make_exp_64 mpicpp64_r.o >> mpicpp64_r.exp
+echo "Making export list for mpifort64_r.o"
+echo "#! libmpi_X.a(mpifort_X.o)" > mpifort64_r.exp
+make_exp_64 mpifort64_r.o >> mpifort64_r.exp
+echo "Making export list for pm_chkrst64_r.o"
+echo "#! libmpi_X.a(pm_chkrst_X.o)" > pm_ckpt64_r.exp
+make_exp_64 pm_chkrst64_r.o >> pm_ckpt64_r.exp
+echo "Making export list for libvtd64_r.o"
+echo "#! libvtd_X.a(dynamic64_X.o)" > libvtd64_r.exp
+make_exp_64 dynamic64_r.o >> libvtd64_r.exp
+#
+# End of make_exports
+#

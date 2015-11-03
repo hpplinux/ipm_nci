@@ -1,0 +1,180 @@
+Integrated Performance Monitoring
+=================================
+
+Summary:
+
+ Performance profiling for parallel MPI and serial codes.
+
+ Provides minimal overhead profiling via on chip counters and processes level
+performance resource usage metrics. Easy to use (minimal user overhead,
+no code instrumentation). Scalable and parallel aware.  Provides MPI
+performance, topology and load balance information to MPI applications. 
+
+ Performance summary report can be centrally logged as well as output. Reports
+can be generated on a per job basis or based upon a time epoch for tracking
+code performance within a job. Supports code regioning and snapshot tracing. 
+
+ Portable & Open Source. 
+
+Usage: * preferred *
+
+	Integrate IPM with your parallel environment and run as normal
+	Contact your local hpc/compiler guru to get things set up
+
+Usage:  * ad hoc *
+        * if you can't integrate into the serial and/or parallel environment *
+        * the forms below indicate some other possible approaches            *
+
+	serial:
+	ipm a.out				
+
+	parallel: 
+	mpirun -np 1024 ipm a.out [args]
+
+	poe ipm a.out [args]
+
+Options: 
+
+IPM_REPORT=full,terse,none
+IPM_DEBUG=1
+IPM_OPTS=MPI:breakwaits+
+IPM_HASHSIZE=some_prime_number
+
+-----
+
+API details see ipm.h
+
+-----
+
+ * some machine constants (clocks, counters, etc.) need to be set for each
+ * machine. E.g. We don't detect IPM_TIME_RDTSC_SECPERTICK. The location to
+ * which logs are written is system specific. etc.
+
+
+------
+
+Profiling and tracing to a lesser extent are more accurate when done over
+longer runs. A very short (10 second) run will be less accurate in terms of
+HPM counts than a longer running test. Keep this in mind when examining very
+short runs.
+
+When timing runs externally from IPM, be aware that IPM can add a few seconds
+to MPI_Init and a number of seconds roughly proportional to concurrency to
+MPI_Finalize. These are onetime costs at application start and stop and may
+lead to a overestimate of profiling overhead if very short runs are used. 
+
+------
+
+April 2008 - Failure detection 
+
+The IPM source code uses 
+
+http://www.cedps.net/index.php/LoggingBestPracticesCheatSheet
+
+MPI_Pcontrol()
+------
+
+Logical Flow in IPM Wrappers
+============================
+MPI_Init() {
+ ipm_mpi_init() {
+  misc setup of bits
+  IPM_CLEAR_TASKDATA
+  ipm_getenvopts
+  set stamp_init;
+  getrusage_init;
+  PMPI_Init();
+  fill labels;
+  call masking;
+  setup tracing;
+  ipm_mpi_link;
+  IPM_HASH_CLEAR
+  ipm_get_switchname
+  ipm_get_switchbytes
+  get_jobdata
+  ipm_hpm_start
+ }
+ ipm_hpm_start();
+}
+
+...
+
+MPI_Finalize() {
+ ipm_mpi_init() {
+  set stamp_final;
+  getrusage_final;
+  ipm_hpm_stop();
+  ipm_region(-1);
+  ipm_get_switchbytes();
+  ipm_sync();
+  ipm_report();
+  ipm_log();
+  ipm_trc_dump();
+  PMPI_Finalize();
+ }
+}
+
+Serial
+======
+
+ipm_hook
+main()
+ipm_hook
+
+
+
+/*
+ * #####
+ * #   Integrated Performance Monitoring
+ * #####
+ *
+ * Integrated MPI, HPM, and memory profiling for parallel applications.
+ *
+ * There are two interfaces: environment variables and MPI_Pcontrol.
+ * In the absence of IPM both interfaces pass through w/o effect.
+ *
+ * #####
+ * #   Environment variable interface
+ * #####
+ *
+ * IPM_REPORT=none,terse,full     --> determines the type of report generated
+ *
+ * IPM_MPI_PASS=MPI_Comm_rank+... --> do not record info for specific MPI calls
+ *
+ * IPM_MPI_NOOP=MPI_Barrier+...   --> do NOTHING for this MPI call. ie. do not call 
+ *                                    MPI - can be useful for debugging but can
+ *                                    make your code crash ! Use with caution.
+ *
+ * IPM_HPM=no,[1,2,3,...],scan
+ *
+ *
+ * #####
+ * #   Pcontrol interface
+ * #####
+ *        C                                     FORTRAN
+ *
+ * regions and atomic tags
+ * MPI_Pcontrol( 0,"tag_a");            call mpi_pcontrol(0,"tag_a//0")
+ * MPI_Pcontrol( 1,"proc_a");           call mpi_pcontrol( 1,"proc_a//0")
+ * MPI_Pcontrol(-1,"proc_a");           call mpi_pcontrol(-1,"proc_a//0")
+ *
+ * queries
+ * MPI_Pcontrol( 4,region_string)       call mpi_pcontrol(4,region_string)
+ *
+ *
+ *
+ * on platforms that do not support MPI_Pcontrol or outside MPI
+ *
+ *        C                                     FORTRAN
+ * ipm_region(1,"region1");             call ipm_region(1,"region1"//0);
+ * ...code...                           ...code...
+ * ipm_region(-1,"region1");            call ipm_region(-1,"region1"//0);
+ * ipm_event("tag");                    call ipm_event("tag"//0)
+ * ipm_trace(1,"call1,call2,..");       call ipm_trace(1,"call1,call2,..."//0)
+ * ipm_trace(0,"call1,call2,..");       call ipm_trace(0,"call1,call2,..."//0)
+ *
+ * David Skinner Sep 2004 (bug reports ,questions -> dskinner@nersc.gov)
+ *
+ */
+
+

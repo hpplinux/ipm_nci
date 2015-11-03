@@ -1,0 +1,109 @@
+#!/bin/sh
+
+#
+# mpirun wrapper for IPM - dskinner@nersc.gov (Feb 2006)
+#
+# Strategies:
+#
+# PRELOAD_ON_CMDLINE:
+#  LD_PRELOAD=somepath/libipm.so mpiexec -n 2  a.out
+#
+# PRELOAD_IN_SCRIPT:
+#  Write the command to a script with an LD_PRELOAD in it.
+#  mpirun the script to get LD_PRELOAD to the parallel env
+#
+# RELINK_EXECUTABLE
+#
+# MP_EUILIBPATH
+#
+# ALTIX : PRELOAD_IN_SCRIPT
+#
+# AIX:
+
+if [ "$MPIRUN_TYPE" == "" ] ; then
+ MPIRUN_TYPE=LINUX
+fi
+
+STRATEGY=NONE
+TMP="none"
+
+if [ "$MPIRUN_TYPE" == "ALTIX" ] ; then 
+ STRATEGY=PRELOAD_IN_SCRIPT
+ IPM_LIB=/usr/common/usg/ipm/default/lib/libipm.so:/usr/common/usg/papi/default/lib/shared/libpapi.so
+ if [ "$LD_PRELOAD" == "" ] ; then 
+  LD_PRELOAD_IPM="LD_PRELOAD=$IPM_LIB"
+ else 
+  LD_PRELOAD_IPM="LD_PRELOAD=$IPM_LIB:$LD_PRELOAD"
+ fi
+ REAL_MPIRUN=/usr/bin/mpirun
+ TMP=".ipm_run."`/bin/date +%s`
+ NP="-np"
+fi
+
+if [ "$MPIRUN_TYPE" == "LINUX" ] ; then 
+ STRATEGY=PRELOAD_IN_SCRIPT
+ REAL_MPIRUN=/usr/common/usg/bin/mpiexec
+ REAL_MPIRUN=/usr/local/bin/mpiexec
+ TMP=".ipm_run."`/bin/date +%s`
+ NP="-n"
+fi
+
+if [ "$IPM_DEBUG" != "" ] ; then 
+ echo "IPM: mpirun_wrapper MPIRUN_TYPE=$MPIRUN_TYPE"
+ echo "IPM: mpirun_wrapper STRATEGY=$STRATEGY"
+ echo "IPM: mpirun_wrapper REAL_MPIRUN=$REAL_MPIRUN"
+fi
+
+if [ $STRATEGY == "PRELOAD_IN_SCRIPT" ] ; then 
+
+ntasks=-1
+PARCMD=""
+ntasks_is_next=0
+for i in "$@" ; do
+ n=`expr $n + 1`
+if [ "$IPM_DEBUG" != "" ] ; then 
+ echo "IPM: mpirun_wrapper PARSE: $i $ntasks_is_next $NP $ntasks"
+fi
+ 
+ if [ "$i" == "$NP" ] ; then 
+  ntasks_is_next=1
+  continue
+ fi
+ if [ $ntasks_is_next -eq 1 ] ; then 
+  ntasks=${!n}
+  ntasks_is_next=0
+  continue
+ fi
+ if [ $ntasks_is_next -eq 0 ] ; then 
+  PARCMD=$PARCMD" ""$i"
+ fi
+done
+
+if [ $ntasks -eq -1 ] ; then 
+ echo "IPM: mpirun_wrapper PARSE: required \"$NP\" argument not found"
+ echo "IPM: command is \"$REAL_MPIRUN $PARCMD\""
+ $PARCMD
+else 
+
+ if [ "$IPM_DEBUG" != "" ] ; then 
+  echo "IPM: mpirun_wrapper NTASKS: $ntasks"
+  echo "IPM: mpirun_wrapper PARCMD: $PARCMD"
+  echo "IPM: mpirun_wrapper TMPSCRIPT: $TMP"
+  echo "IPM: mpirun_wrapper LD_PRELOAD_IPM: $LD_PRELOAD_IPM"
+ fi
+ 
+ rm -f $TMP
+ touch $TMP
+ chmod +x $TMP
+ echo "#!/bin/sh " >> $TMP
+ echo $LD_PRELOAD_IPM $PARCMD >> $TMP
+ $REAL_MPIRUN $NP $ntasks ./$TMP
+ if [ "$IPM_DEBUG" != "" ] ; then 
+  echo "IPM: running $REAL_MPIRUN " " $NP " " $ntasks ./$TMP"
+ fi
+ rm -f $TMP
+
+ fi
+fi
+
+

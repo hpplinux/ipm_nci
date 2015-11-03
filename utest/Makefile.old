@@ -1,0 +1,91 @@
+# edit make_config for platform and archiecture specifics
+
+include ../make_config
+
+TEST_CFLAGS = -I../include $(CFLAGS) -DIPM
+TEST_LFLAGS = $(LFLAGS) $(HPMLIB)
+
+all: 
+	
+all: xlabel xhpm xexecinfo xtaskdata xbit xenv xpapi xswitch xhash xhashmap xpcontrol_c xpcontrol_f xmalloc xmask xlog
+
+xexecinfo: xexecinfo.c ../src/ipm_execinfo.c
+	$(CC) $(TEST_CFLAGS) -I../src -g xexecinfo.c -o xexecinfo $(TEST_LFLAGS)
+
+xtaskdata: xtaskdata.c 
+	$(CC) $(TEST_CFLAGS) -I../src -g xtaskdata.c -o xtaskdata $(TEST_LFLAGS)
+
+xlabel: xlabel.c ../src/ipm_api.c 
+	$(CC) $(TEST_CFLAGS) -I../src -g xlabel.c -o xlabel $(TEST_LFLAGS) 
+
+xhpm: xhpm.c ../src/ipm_api.c ../src/ipm_hpm.c
+	$(CC) $(TEST_CFLAGS) -I../src -g xhpm.c -o xhpm $(TEST_LFLAGS) 
+
+xpapi: xpapi.c 
+	$(CC) $(TEST_CFLAGS) -I../src/ -g -o xpapi xpapi.c $(TEST_LFLAGS) 
+
+xhpm_test: xhpm_test.c ../src/ipm_api.c ../src/ipm_hpm.c
+	$(CC) $(TEST_CFLAGS) -I../src -g xhpm_test.c -o xhpm_test $(TEST_LFLAGS) 
+
+xtimer: xtimer.c 
+	$(CC) $(TEST_CFLAGS) -I../include -g xtimer.c -o xtimer $(TEST_LFLAGS)
+
+xpcontrol_c: xpcontrol_c.c ./pcontrol.c 
+	$(MPICC) $(TEST_CFLAGS) -I../include -g -c ./pcontrol.c $(TEST_LFLAGS) 
+	$(CC) $(TEST_CFLAGS) -I../include -o xpcontrol_c -g xpcontrol_c.c ./pcontrol.o $(TEST_LFLAGS) 
+
+xpcontrol_f: xpcontrol_f.f ./pcontrol.c 
+	$(MPICC) $(TEST_CFLAGS) -DWRAP_FORTRAN -I../include -g -c ./pcontrol.c $(TEST_LFLAGS)
+	$(F77) $(TEST_CFLAGS) -DWRAP_FORTRAN -I../include -o xpcontrol_f -g xpcontrol_f.f ./pcontrol.o $(TEST_LFLAGS)
+
+xbit: xbit.c ../src/ipm_bit_test.c 
+	$(CC) $(TEST_CFLAGS) -I../src -g xbit.c -o xbit $(TEST_LFLAGS)
+
+xenv: xenv.c ../src/ipm_env.c 
+	$(CC) $(TEST_CFLAGS) -I../src -g xenv.c -o xenv $(TEST_LFLAGS)
+
+xmask: xmask.c ../src/ipm_util.c 
+	$(CC) $(TEST_CFLAGS) -I../src -g xmask.c -o xmask $(TEST_LFLAGS)
+
+xhash: xhash.c 
+	$(CC) $(TEST_CFLAGS) -I../src -g xhash.c -o xhash $(TEST_LFLAGS)
+
+xlog: xlog.c ../src/ipm_syslog_write.c ../src/ipm_env.c
+	$(CC) $(TEST_CFLAGS) -I../src -g xlog.c -o xlog $(TEST_LFLAGS)
+
+xhashmap: xhashmap.c 
+	$(CC) $(TEST_CFLAGS) -I../src -g xhashmap.c -o xhashmap $(TEST_LFLAGS)
+
+xswitch: xswitch.c 
+	$(CC) $(TEST_CFLAGS) -I../src -g xswitch.c -o xswitch $(TEST_LFLAGS)
+
+xcallsite: xcallsite.c
+	$(CC) $(TEST_CFLAGS) -DIPM_ENABLE_PROFLOW -I../src -g xcallsite.c -o xcallsite $(TEST_LFLAGS)
+	
+xmalloc: xmalloc.c
+	$(CC) $(TEST_CFLAGS) xmalloc.c -o xmalloc $(TEST_LFLAGS)
+	
+check: xhpm xexecinfo xbit xenv xtimer
+	./xexecinfo 
+	./xhpm -n 1000
+	./xhpm -n 10000
+	./xhpm -n 100000
+	./xbit
+	./xtimer
+	IPM_DEBUG=1 IPM_BOGUS=findme IPM_MPI_PASS=MPI_Fake IPM_MPI_NOOP=MPI_Barrier IPM_MPI_TRACE=call:MPI_Reduce,mem:4.0,time[3-5] ./xenv
+	./xpapi
+	./xhash
+	./xhashmap
+	./xswitch
+	
+
+xflop: xflop.c
+	$(CC) -I. -o xflop xflop.c $(TEST_LFLAGS)
+
+
+papi_avail: papi_avail.c 
+	$(CC) $(CFLAGS) -o papi_avail papi_avail.c $(TEST_LFLAGS)
+
+clean:
+	rm -rf *.o flop doflop xapp_serial xflop papi_avail xhpm_test xflop xexecinfo xtaskdata xhpm xbit xtimer xpapi xhash xhashmap xswitch xenv xpcontrol_c xpcontrol_f xmalloc xmask
+

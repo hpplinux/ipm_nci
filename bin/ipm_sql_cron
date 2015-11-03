@@ -1,0 +1,23 @@
+#!/bin/sh
+
+set -x
+
+DATE=`date +%m%d%y-%H%M`
+
+#Create SQL import file for all users
+
+cd /usr/common/usg/ipm/sql/
+
+if [ -a ipm.all.sql ]; then
+	mv ipm.all.sql ipm.all.sql.$DATE
+#	rm -f poe.all.sql
+fi
+
+/usr/common/usg/ipm/scripts/ipm_sql all
+#~ragerber/cvs/seaborg/ipm/scripts/ipm_sql all
+
+
+#Delete files from consult scratchdir after 61 days
+
+#cd /scratch/scratchdirs/consult/log/ipm
+#/usr/common/usg/gnu/tbin/gfind -mtime +61 | /usr/common/usg/gnu/tbin/gxargs -i /bin/rm -f {}

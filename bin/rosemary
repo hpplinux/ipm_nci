@@ -1,0 +1,109 @@
+#!/usr/bin/perl
+
+%byte = ();
+%nmsg = ();
+
+sub numy { $a <=> $b }
+
+$fname = $ARGV[0];
+
+open(FH, "< $fname") or die "Couldn't read from file: $fname\n";
+
+$byte_tot = 0.0;
+$nmsg_tot = 0.0;
+$rank_max = -1;
+
+while(defined($line = <FH>)) {
+ chomp($line);
+ ($ireg, $irank, $jrank, $ibyte, $ibyte_tx, $ibyte_rx, $inmsg_tx, $inmsg_rx) = 
+	split(/ / , $line);
+
+ next if($ireg eq "#");
+# next if($irank < $jrank);
+
+ if($irank > $rank_max) {$rank_max = $irank;}
+ if($irank < $rank_min) {$rank_min = $irank;}
+ 
+ $byte_tot += $ibyte;
+ $nmsg_tot += ($inmsg_tx + $inmsg_rx);
+
+ if(defined($byte{$irank}{$jrank})) {
+  print "warning: multiple inputs in map -->$line\n";
+  $byte{$irank}{$jrank} += $ibyte;
+  $nmsg{$irank}{$jrank} += $inmsg_tx + $inmsg_rx;
+ } else {
+  $byte{$irank}{$jrank} = $ibyte;
+  $nmsg{$irank}{$jrank} = $inmsg_tx + $inmsg_rx;
+ }
+}
+
+
+
+if($rank_max <= 0) {
+ print "exit no ranks\n";
+ exit(1);
+}
+
+$ncirc = 0;
+
+$cov = 0.0;
+$byte_cum = 0.0;
+$nmsg_cum = 0.0;
+
+while(1) {
+
+ $ncirc ++;
+ $byte_top = 0.0;
+ $nmsg_top = 0.0;
+ $nlist = 0;
+
+ foreach $irank (keys %byte) {
+  foreach $jrank (keys %{$byte{$irank}}) {
+
+   $nlist ++; 
+
+   if($byte{$irank}{$jrank} > $byte_top) {
+    $byte_top = $byte{$irank}{$jrank};
+    $byte_i = $irank;
+    $byte_j = $jrank;
+   }
+
+   if($nmsg{$irank}{$jrank} > $nmsg_top) {
+    $nmsg_top = $nmsg{$irank}{$jrank};
+    $nmsg_i = $irank;
+    $nmsg_j = $jrank;
+   }
+
+   }
+  }
+
+  if($nlist == 0) {exit(0);}
+
+  $cov_try_byte = 0.5*(($byte_cum+$byte_top)/$byte_tot + $nmsg_cum/$nmsg_tot);
+  $cov_try_nmsg = 0.5*($byte_cum/$byte_tot + ($nmsg_cum+$nmsg_top)/$nmsg_tot);
+
+#  print "$byte_top $nmsg_top $cov_try_byte $cov_try_nmsg \n";
+
+  if($cov_try_byte >= $cov_try_nmsg) {
+   $cov = $cov_try_byte;
+   $win = "byte";
+   $this_i = $byte_i;
+   $this_j = $byte_j;
+  } else {
+   $cov = $cov_try_nmsg;
+   $win = "nmsg";
+   $this_i = $nmsg_i;
+   $this_j = $nmsg_j;
+  }
+   $ncirc ++;
+   $byte_cum += $byte{$this_i}{$this_j};
+   $nmsg_cum += $nmsg{$this_i}{$this_j};
+   delete $byte{$this_i}{$this_j};
+   delete $nmsg{$this_i}{$this_j};
+   $byte_cov = $byte_cum/$byte_tot;
+   $nmsg_cov = $nmsg_cum/$nmsg_tot;
+   print "$nlist $ncirc $this_i $this_j $win $cov $byte_cov $nmsg_cov\n";
+
+# if($ncirc == $rank_max*$rank_max) {break;}
+}
+

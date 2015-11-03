@@ -1,0 +1,41 @@
+API refactoring:
+----------------
+
+1) env vars : user/center API
+2) MPI_Pcontrol : hpcuser API
+3) methods on task, job, and trace structs: internal API
+
+---
+
+parsing 
+
+ to show a comparison of runs posited to represent
+	1) the same work at differenent concurrencies on the same architecture
+	ipm -compare=strong file1.xml file2.xml ...
+	2) the same work at the same concurrency on different architectures
+	ipm -compare=arch file1.xml file2.xml ...
+	3) work proportional to concurrency on the same architecture
+	ipm -compare=weak file1.xml file2.xml ...
+	4) a bunch of runs, no task information
+	ipm -compare=workload file1.xml file2.xml ...
+
+---
+ 
+Option to replace MPI_Waitall with an MPI_Waitany loop
+
+remove as many popen calls as possible 
+
+---
+
+binary trace files
+trace viewer 
+trace hooks for running code -> tx
+complete socket tree in ipm binary
+remapper for postprocessing of logs to optimally remap task topology 
+
+
+If regions are invoked on some tasks and not others then ipm_report will
+deadlock. 
+
+grep -r FIXME .
+

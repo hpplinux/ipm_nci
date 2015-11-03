@@ -1,0 +1,29 @@
+#!/bin/bash
+
+rm -rf tmp
+grep -v _Wait $1 |  awk '(NR>1 && $5>0){count[$5"_"$4]+=$6};END{for (i in count){print i, count[i];}}' | sed -e 's/_/ /' | sort -n | awk '{tag = "P2P"; if($2 == "MPI_Bcast" || $2=="MPI_Reduce" || $2=="MPI_Allreduce" || $2=="MPI_Gather" || $2=="MPI_Gather" || $2=="MPI_Gatherv" || $2=="MPI_Allgatherv") {tag="COL"}; print tag , $0}'  > tmp
+
+
+egrep -v "COL|P2P" tmp | awk '{print "ERROR "$0}'
+
+awk '($1=="P2P")' tmp | sort -n +1 > tmp.p2p
+awk '($1=="COL")' tmp | sort -n +1 > tmp.col
+
+export TOT_P2P=`awk '{tot+=$4};END{print tot}' tmp.p2p`
+export TOT_COL=`awk '{tot+=$4};END{print tot}' tmp.col`
+export TOT_ALL=`expr $TOT_P2P + $TOT_COL`
+export PCT_P2P=`awk 'BEGIN{print ENVIRON["TOT_P2P"] / (1.0 * ENVIRON["TOT_ALL"])}'`
+export PCT_COL=`awk 'BEGIN{print ENVIRON["TOT_COL"] / (1.0 * ENVIRON["TOT_ALL"])}'`
+
+export MED_P2P=`awk '{tot += $4; if(tot > ENVIRON["TOT_P2P"]/2.0){print $2; exit;} }' tmp.p2p`
+export MED_COL=`awk '{tot += $4; if(tot > ENVIRON["TOT_COL"]/2.0){print $2; exit;} }' tmp.col`
+
+echo total $TOT_ALL
+echo 
+echo total_p2p $TOT_P2P   total_col $TOT_COL
+echo 
+echo %call_p2p $PCT_P2P   %call_col $PCT_COL
+echo 
+echo median_p2p $MED_P2P  median_col $MED_COL
+
+echo $PCT_P2P $MED_P2P $PCT_COL $MED_COL

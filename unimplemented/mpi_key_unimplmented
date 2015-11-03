@@ -1,0 +1,4 @@
+int MPI_Comm_join(int, MPI_Comm *);
+int MPI_Comm_spawn(char *, char *[], int, MPI_Info, int, MPI_Comm, MPI_Comm *,
+int MPI_Comm_spawn_multiple(int, char *[], char **[], int [], MPI_Info [], int,
+

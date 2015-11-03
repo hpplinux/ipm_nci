@@ -1,0 +1,1 @@
+awk '($1=="<task"){tag = $4};($1=="<hent"){print tag, $0}' $1 | sed -e 's/"//g;s/mpi_rank=//g;s/<hent key=//g;s/call=//;s/bytes=//;s/orank=//;s/region=//;s/count=//;s/>//;s/<\/hent>//' | awk '{print $2, $1, $5, $3, $4, $6, $7, $8, $9, $10}'

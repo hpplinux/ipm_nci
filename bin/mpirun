@@ -1,0 +1,6 @@
+#!/bin/sh 
+
+echo $0
+VAR=`basename $0`
+echo $VAR
+

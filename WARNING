@@ -1,0 +1,28 @@
+Hi, 
+
+If you are a HPC application developer or user and want to use IPM to profile 
+your code, you may want to enlist the help of a system administrator or HPC
+engineer to get IPM installed. In its ideal form IPM exists as an easy to use
+layer between applications and the parallel execution environment on a
+particular machine.  Getting that layer implemented often involves many system
+specific configuration choices that are best made on a per machine rather
+than per user basis.
+
+That said, IPM does not require root privleges and you can install it in your
+own space. Several users have done just that, but doing so may require some
+degree of thinking and planning outside of your particular application. 
+
+The skill set that's required to install IPM is roughly:
+
+  * an understanding the MPI implmentation that's being used
+  * an understanding how parallel exeuction works (mpirun, PE, PBS, LL, etc.)
+  * a working knowledge of MPI linkage and shared libraries
+  * an understanding of the switch and nodenames on the system
+  * identifying a location and method of writting logs files
+
+If you have ideas about how to make IPM easier to install, they are certainly
+welcome. 
+
+Regards, 
+
+the IPM developers

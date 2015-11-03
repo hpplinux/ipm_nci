@@ -1,0 +1,20 @@
+--
+LD_PRELOAD=$IPM_ROOT/lib/libipm.so mpiexec -n $N $APP
+--
+LD_PRELOAD=$IPM_ROOT/lib/libipm.sompirun -np $N -x $APP
+--
+mpirun -np $N -x LD_PRELOAD=$IPM_ROOT/lib/libipm.so $APP
+--
+mpirun -np $N $APP_SCRIPT
+
+where $APP_SCRIPT
+
+EXPORT LD_PRELOAD=$IPM_ROOT/lib/libipm.so
+mpirun -np $N $APP
+
+--
+MP_EUILIBPATH=$IPM_ROOT $APP -tasks $N -nodes 1
+--
+
+--
+

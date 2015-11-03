@@ -1,0 +1,1551 @@
+#!/usr/bin/perl
+#use strict;
+use POSIX;
+use File::Basename;
+
+#
+#
+# This is a parser for IPM logfiles. It can generate human 
+# readable reports from the markup in the log. 
+#
+#
+# David Skinner (NERSC/LBL)
+# Dec 2004 dskinner@nersc.gov
+
+# config
+
+$PLOTICUS="/usr/local/bin/pl";
+$PLOTICUS_PREFABS="/www/ploticus/src/prefabs/";
+$IPM_KEYFILE="/home/dskinner/src/ipm/ipm_key";
+
+%mpi_call = ();
+sub numy { $a <=> $b }
+sub byidv { $a{idv} <=> $b{idv} }
+open(FH,"< $IPM_KEYFILE");
+while($line = <FH>) {
+ chomp($line);
+ @v = split('\|',$line);
+ $_ = $v[2];
+ /(.*) (.*)\((.*)\)/;
+ $id = $2;
+ next if ($SPLIT_COLLECTIVE==0 && $line =~ "MPE_I");
+ @u = split('\,',$v[4]);
+ $mpi_call{$id} = {
+  idv => "$v[0]",
+  idl => "$v[1]",
+  cpt => "$v[2]",
+  fpt => "$v[3]",
+  sem => "$u[0]",
+  byt => "$u[1]",
+  rnk => "$u[2]",
+  dat => "$u[3]"};
+}
+close(FH);
+
+
+#foreach $call (sort byidv keys %mpi_call) {
+# print "$call $mpi_call{$call}{dat}\n";
+#}
+
+
+
+
+#
+# main data structures 
+#
+# $jobs is the top level, keyed by cookies
+# $J = \%{$jobs{$cookie}}; --> a job
+# $T = \%{$jobs{$cookie}{task}{$mpi_rank}}; --> a task
+# so e.g., $T->{mtime} is the MPI time for that task. 
+
+
+%flags = ();
+$njobs = 0;
+$ijob = 0;
+%jobs = ();
+$global_ipm_version = "NULL";
+$region_current = "parse_none";
+@rusage_label = ("utime", "stime", "maxrss", "ixrss", "idrss", "minflt", "majflt", "nswap", "inblock", "oublock", "msgsnd", "msgrecv", "nsignals", "nvcsw", "nivcsw");
+
+@ipm_color=   (	"red", "green", "blue", "yellow", 
+               	"purple","coral", "orange", "darkblue",
+               	"skyblue","claret", "teal", "magenta",
+		"pink", "lightpurple", "kelleygreen", 
+		"redorange", "darkblue", "tan1",
+		"yellow2", "teal", "lavender",
+		"rgb(0.0,1.0,1.0)","rgb(0.8,0.8,0.8)",
+               	"rgb(0.7,0.7,0.7)","rgb(0.6,0.6,0.6)",
+		"rgb(0.5,0.5,0.5)", "rgb(0.2,0.2,0.2)");
+
+%ipm_color_bycall = ();
+
+sub taskbyrank  { $a <=> $b };
+sub taskbymtime { $J->{task}{$a}{mtime} <=> $J->{task}{$b}{mtime} };
+sub taskbygflop { $J->{task}{$a}{gflop} <=> $J->{task}{$b}{gflop} };
+sub jcallbyttot { $J->{mpi}{call}{$a}{ttot} <=> $J->{mpi}{call}{$b}{ttot} };
+sub jcallsizebyttot { $J->{mpi}{call_size}{$a}{ttot} <=> $J->{mpi}{call_size}{$b}{ttot} };
+sub hashibyttot { $th{$a}{ttot} <=> $th{$b}{ttot} };
+
+
+$DEBUG                  =(1<<  0);
+$VERBOSE                =(1<<  1);
+$REPORT_TERSE           =(1<<  2);
+$REPORT_FULL            =(1<<  4);
+$REPORT_NONE            =(1<<  5);
+$REPORT_LABELIO         =(1<<  6);
+$IPM_INITIALIZED        =(1<< 10);
+$IPM_PASSTHRU           =(1<< 11);
+$IPM_ABORTED            =(1<< 12);
+$IPM_INTERRUPTED        =(1<< 13);
+$IPM_FINALIZED          =(1<< 14);
+$IPM_MPI_INITIALIZED    =(1<< 15);
+$IPM_MPI_REGIONALIZED   =(1<< 16);
+$IPM_MPI_FINALIZING     =(1<< 17);
+$IPM_MPI_FINALIZED      =(1<< 18);
+$IPM_MPI_INSIDE         =(1<< 19);
+$IPM_MPI_ACTIVE         =(1<< 20);
+$IPM_MPI_CANCELED       =(1<< 21);
+$IPM_HPM_ACTIVE         =(1<< 22);
+$IPM_HPM_CANCELED       =(1<< 23);
+$IPM_APP_RUNNING        =(1<< 24);
+$IPM_APP_COMPLETED      =(1<< 25);
+$IPM_APP_INTERRUPTED    =(1<< 26);
+$IPM_WROTESYSLOG        =(1<< 27);
+$IPM_TRC_ACTIVE         =(1<< 30);
+$IPM_TRC_CANCELED       =(1<< 31);
+
+
+sub usage {
+ print "usage: IPM parse [-full|-html] [-xtrap] [-debug]  file [...] \n";
+ print "\n";
+}
+
+
+if(@ARGV == 0) {
+ usage();
+ exit(1);
+}
+
+####
+#  Parse ARGV
+####
+
+%flags = ();
+$flags{report_terse} = 1;
+$flags{report_full} = 0;
+$flags{report_html} = 0;
+$flags{debug} = 0;
+$flags{devel} = 0;
+
+$not_fname = 1;
+while($not_fname) {
+ if($ARGV[0] =~ /^-debug$/) {
+  $flags{debug} = 1;
+  shift @ARGV;
+ } elsif($ARGV[0] =~ /^-xtrap$/) {
+  $flags{extrapoloate} = 1;
+  shift @ARGV;
+ } elsif($ARGV[0] =~ /^-full$/) {
+  $flags{report_terse} = 0; 
+  $flags{report_full} = 1; 
+  shift @ARGV;
+ } elsif($ARGV[0] =~ /^-html$/) {
+  $flags{report_terse} = 0; 
+  $flags{report_html} = 1; 
+  shift @ARGV;
+ } elsif($ARGV[0] =~ /^-devel$/) {
+  $flags{report_terse} = 0; 
+  $flags{report_html} = 1; 
+  $flags{report_devel} = 1; 
+  shift @ARGV;
+ } else {
+  $not_fname = 0;
+ }
+}
+
+if($flags{debug}) {
+ foreach $k (sort keys %flags) {
+	 print "IPM parse:  FLAG $k = $flags{$k}\n";
+ }
+}
+####
+#  Aquisition
+####
+
+$done = 0;
+while(!$done) {
+ $fname = shift @ARGV;
+ if($flags{debug}) { print "IPM parse:  file = $fname $#ARGV\n";}
+
+ open(FH, "< $fname") or die "Couldn't read from file: $fname\n";
+
+ while($line = <FH>) {
+ 
+ if($flags{debug}) { print "IPM parse:  line $line</line> \n";}
+
+  if($line =~ /^<task ipm_version="([0-9.]+)" (.*)$/) {
+   $iversion = $1;
+   if($gobal_ipm_version == NULL) {
+    $global_ipm_version = $iversion;
+   }
+   if($iversion != $global_ipm_version) {
+    print "IPM: parse error, multiple versions $iversion, $global_ipm_iversion} in input\n";
+    exit(1);
+   }
+  }
+
+  $got_version = 0;
+
+  if($iversion == "0.83" || $iversion == "0.82" || $iversion =="0.81" ) {
+   $got_version = 1;
+   if($line =~ /^<task (.*)>/) {
+    if(1 || $flags{debug}) { print "IPM parse: task $1\n"; }
+    @vp = split("\" ",$1);
+    foreach $kv (@vp) {
+     ($key, $value) = split("=\"",$kv);
+     $$key = $value;
+    }
+#    print "task $ipm_version $cookie $mpi_rank $mpi_size $stamp_init $stamp_final $username $flags\n";
+
+
+    $jobs{$cookie}{ipm_version} = $ipm_version;
+
+
+    foreach $kv (@vp) {
+     ($key, $value) = split("=\"",$kv);
+     if($key !~ "cookie" && $key !~ "mpi_rank") {
+      if(defined($jobs{$cookie}{task}{$mpi_rank}{$key})) {
+       print "IPM parse: ERROR corrupted input (duplicate task entry?) $cookie:$mpi_rank:$key \n";
+      }
+      $jobs{$cookie}{task}{$mpi_rank}{$key} = $value;
+     }
+    }
+   $T = \%{$jobs{$cookie}{task}{$mpi_rank}};
+   $J = \%{$jobs{$cookie}};
+  }
+
+
+   if($line =~ /^<job (.*)>(.*)<\/job>/) {
+    $jobs{$cookie}{id} = $2;
+    @vp = split("\" ",$1);
+    foreach $kv (@vp) {
+     ($key, $value) = split("=\"",$kv);
+     $jobs{$cookie}{$key} = $value;
+    }
+    $jobs{$cookie}{filename} = $fname;
+    $jobs{$cookie}{filename_base} = basename($fname);
+   }
+
+   if($line =~ /^<host (.*)>(.*)<\/host>/) {
+    if($flags{debug}) { print "IPM parse: host $1 $2\n"; }
+    $T->{hostname} = $2;
+    @vp = split("\" ",$1);
+    foreach $kv (@vp) {
+     ($key, $value) = split("=\"",$kv);
+     $T->{$key} = $value;
+    }
+   }
+
+   if($line =~ /<perf (.*)><\/perf>/) {
+    if($flags{debug}) { print "IPM parse: perf $1\n";}
+    @vp = split("\" ",$1);
+    foreach $kv (@vp) {
+     ($key, $value) = split("=\"",$kv);
+     $T->{$key} = $value;
+    }
+    if($T->{wtime} <= 0.0) {
+     if($flags{debug}) { print "IPM parse: ERROR wtime <= 0 $1\n";}
+    }
+    $T->{pct_comm} = 100*$T->{mtime}/$T->{wtime};
+   }
+
+   if($line =~ /<switch (.*)>(.*)<\/switch>/) {
+    if($flags{debug}) { print "IPM parse: switch $1\n";}
+    @vp = split("\" ",$1);
+    foreach $kv (@vp) {
+     ($key, $value) = split("=\"",$kv);
+     $T->{$key} = $value;
+    }
+    $T->{switch} = $2;
+   }
+
+   if($line =~ /<env>(.*)<\/env>/) {
+    $J->{env} = $J->{env}."<br>\n".$1;
+   }
+
+   if($line =~ /<cmdline (.*)>(.*)<\/cmdline>/) {
+    if($flags{debug}) { print "IPM parse: cmdline $2\n";}
+    @vp = split("\" ",$1);
+    foreach $kv (@vp) {
+     ($key, $value) = split("=\"",$kv);
+     $T->{$key} = $value;
+    }
+    $T->{cmdline} = $2;
+    $T->{cmdline_base} = basename($T->{realpath});
+   }
+
+
+   if($line =~ /<exec><pre>/) {
+    while(defined ($line = <FH>) && !($line =~ /<\/pre><\/exec>/)) {
+     $T->{exec}  .= $line;
+    }
+    if($flags{debug}) { print "IPM parse: exec $T->{exec}\n";}
+   }
+
+   if($line =~ /<exec_bin><pre>/) {
+    while(defined ($line = <FH>) && !($line =~ /<\/pre><\/exec_bin>/)) {
+     $T->{exec_bin}  .= $line;
+    }
+    if($flags{debug}) { print "IPM parse: exec $T->{exec_bin}\n";}
+   }
+
+   if($line =~ /<ru_(\w+)>(.*)<\/ru_(\w+)>/) {
+    if($flags{debug}) { print "IPM parse: ru_$1 $2\n";}
+    $ru_tag = "ru_".$1;
+    @vp = ();
+    @vp = split(" ",$2);
+    $i = 0;
+    foreach $v (@vp) {
+     $key = $ru_tag."_".$rusage_label[$i];
+     $T->{$key} = $v;
+     $i++;
+    }
+   }
+
+   if($line =~ /<regions n="(\d+)" >/) {
+    if($flags{debug}) { print "IPM parse: regions $1\n";}
+    $T->{region_nregion} = $1;
+   }
+
+   if($line =~ /<region label="(\w+)" (.*)>/) {
+    if($flags{debug}) { print "IPM parse: region label=$1 $2\n";}
+    if($region_current !~ "parse_none") {
+     print "IPM parse: ERROR region $1 started prior to $region_current closing.\n";
+     exit(1);
+    }
+    $region_current = $1;
+    $R=\%{$T->{region}{$region_current}};
+    @vp = split("\" ",$2);
+    foreach $kv (@vp) {
+     ($key, $value) = split("=\"",$kv);
+     $R->{$key} = $value;
+    }
+   }
+
+ 
+   if($line =~ /<hent key="(.*)" call="(.*)" bytes="(.*)" orank="(.*)" region="(.*)" count="(.*)" >(.*) (.*) (.*)<\/hent>/) {
+    if($flags{debug}) { print "IPM parse: hent $1\n";}
+    $ikey = $1;
+    $icall = $2;
+    $ibytes = $3;
+    $iorank = $4;
+    $ireg = $5;
+    $icount = $6;
+    $ittot = $7;
+    $itmin = $8;
+    $itmax = $9;
+
+    unless($icall =~ /MPI_/) {
+     print "ERROR $line";
+    }
+
+#    print "hent $icall $ibytes $mpi_rank $iorank $ireg $icount $ittot $itmin $itmax\n";
+    $J->{hash}{$icall}{$ibytes}{$mpi_rank}{$iorank}{$ireg}{count} = $icount;
+    $J->{hash}{$icall}{$ibytes}{$mpi_rank}{$iorank}{$ireg}{ttot} = $ittot;
+    $J->{hash}{$icall}{$ibytes}{$mpi_rank}{$iorank}{$ireg}{tmin} = $itmin;
+    $J->{hash}{$icall}{$ibytes}{$mpi_rank}{$iorank}{$ireg}{tmax} = $itmax;
+   }
+
+   if($line =~ /<counter name="(.*)" > (.*) <\/counter>/) {
+    $icounter = $1;
+    $icount = $2;
+#    print "hpm_count $icounter $mpi_rank $icount\n";
+    $T->{hpm_count}{$icounter} = $icount;
+   }
+
+   if($line =~ /<\/region>$/) {
+    $region_current = "parse_none";
+   }
+
+
+  }
+
+ }
+ 
+  if($got_version == 0) {
+   print "Unrecognized IPM version in file $fname (skipped)\n";
+  }
+
+ if($#ARGV <= 0) {$done=1;}
+}
+
+
+if($flags{debug}) { 
+foreach $cookie ( sort keys %jobs ) {
+ foreach $jkey ( sort keys %{$jobs{$cookie}} ) {
+  if($jkey =~ "ipm_version") {
+    print "IPM dump: j{$cookie}{ipm_version} $jobs{$cookie}{ipm_version} \n";
+  }
+
+  if($jkey =~ "task") {
+   foreach $mpi_rank (sort keys %{$jobs{$cookie}{task}} ) {
+    foreach $key (sort keys %{$jobs{$cookie}{task}{$mpi_rank}} ) {
+     print "IPM parse: dump j{$cookie}{task}{$mpi_rank}{$key} $jobs{$cookie}{task}{$mpi_rank}{$key} $jobs{$cookie}{task}{$mpi_rank}{$key} $jobs{$cookie}{task}{$mpi_rank}{$key}\n";
+    }
+   }
+  }
+
+
+ }
+}
+}
+
+
+foreach $cookie (sort keys %jobs) {
+ $J = \%{$jobs{$cookie}};
+
+####
+#  Aggregation
+####
+
+ $J->{gbyte_max} = -1.0;
+ $J->{gflop_max} = -1.0;
+ $J->{wtime_max} = -1.0;
+ $J->{utime_max} = -1.0;
+ $J->{stime_max} = -1.0;
+ $J->{mtime_max} = -1.0;
+ $J->{wtime} = 0.0;
+ $J->{utime} = 0.0;
+ $J->{stime} = 0.0;
+ $J->{mtime} = 0.0;
+ $J->{ntasks_logged} = 0;
+ $J->{bytes_tx} = 0;
+ $J->{bytes_rx} = 0;
+ $J->{bytes_tx_max} = -1.0;
+ $J->{bytes_rx_max} = -1.0;
+
+ foreach $irank (sort keys %{$J->{task}} ) {
+ $T = \%{$J->{task}{$irank}};
+
+  if($J->{ntasks_logged} == 0) {
+   $J->{username} = $T->{username};
+   $J->{groupname} = $T->{groupname};
+   $J->{cmdline} = $T->{cmdline};
+   $J->{ntasks} = $T->{mpi_size};
+   $J->{hostname} = $T->{hostname};
+   $J->{flags} = $T->{flags};
+   $J->{mach_info} = $T->{mach_info};
+   $J->{cmdline_base} = $T->{cmdline_base};
+  }
+
+  $J->{ntasks_logged} ++;
+  $J->{wtime} += $T->{wtime};
+  $J->{utime} += $T->{utime};
+  $J->{stime} += $T->{stime};
+  $J->{mtime} += $T->{mtime};
+  $J->{pct_comm} += $T->{pct_comm};
+  $J->{gbyte} += $T->{gbyte};
+  $J->{gflop} += $T->{gflop};
+  $J->{bytes_tx} += $T->{bytes_tx};
+  $J->{bytes_rx} += $T->{bytes_rx};
+  
+
+  $J{hostlist}{$T->{hostname}}{$irank} =+ 1;
+
+  if($T->{gflop} > $J->{gflop_max}) {
+   $J->{gflop_max} = $T->{gflop};
+  }
+
+  if($T->{bytes_tx} > $J->{bytes_tx_max}) {
+   $J->{bytes_tx_max} = $T->{bytes_tx};
+  }
+
+  if($T->{bytes_rx} > $J->{bytes_rx_max}) {
+   $J->{bytes_rx_max} = $T->{bytes_rx};
+  }
+
+  if($T->{gbyte} > $J->{gbyte_max}) {
+   $J->{gbyte_max} = $T->{gbyte};
+  }
+
+  if($T->{wtime} > $J->{wtime_max}) {
+   $J->{wtime_max} = $T->{wtime};
+  }
+  
+  if($T->{utime} > $J->{utime_max}) {
+   $J->{utime_max} = $T->{utime};
+  }
+  
+  if($T->{stime} > $J->{stime_max}) {
+   $J->{stime_max} = $T->{stime};
+  }
+  
+  if($T->{mtime} > $J->{mtime_max}) {
+   $J->{mtime_max} = $T->{mtime};
+  }
+  
+ }
+
+ print "MAX:  gflop $J->{gflop_max} gbyte $J->{gbyte_max} bytes_tx $J->{bytes_tx_max} bytes_rx $J->{bytes_rx_max} wtime $J->{wtime_max} utime $J->{utime_max} stime $J->{stime_max} mtime $J->{mtime_max} \n";
+
+
+ foreach $irank (sort keys %{$J->{task}} ) {
+  $T = \%{$J->{task}{$irank}};
+  foreach $icounter (sort keys %{$T->{hpm_count}} ) {
+   $J->{hpm_pop}{$icounter} = 0;
+  }
+ }
+
+ foreach $irank (sort keys %{$J->{task}} ) {
+  $T = \%{$J->{task}{$irank}};
+  foreach $icounter (sort keys %{$T->{hpm_count}} ) {
+   if($J->{hpm_pop}{$icounter} == 0) {
+    $J->{hpm_stat}{$icounter}{min} = $T->{hpm_count}{$icounter};
+    $J->{hpm_stat}{$icounter}{max} = $T->{hpm_count}{$icounter};
+    $J->{hpm_stat}{$icounter}{min_rank} = $irank;
+    $J->{hpm_stat}{$icounter}{max_rank} = $irank;
+   }
+
+   $J->{hpm_count}{$icounter} += $T->{hpm_count}{$icounter};
+   $J->{hpm_pop}{$icounter}++;
+
+   if( $T->{hpm_count}{$icounter} < $J->{hpm_stat}{$icounter}{min}) {
+    $J->{hpm_stat}{$icounter}{min} = $T->{hpm_count}{$icounter};
+    $J->{hpm_stat}{$icounter}{min_rank} = $irank;
+   }
+
+   if( $T->{hpm_count}{$icounter} > $J->{hpm_stat}{$icounter}{max}) {
+    $J->{hpm_stat}{$icounter}{max} = $T->{hpm_count}{$icounter};
+    $J->{hpm_stat}{$icounter}{max_rank} = $irank;
+   }
+ 
+  }
+  }
+
+# foreach $icounter (sort keys %{$J->{hpm_count}} ) {
+#  print "counter $icounter $J->{hpm_count}{$icounter}\n";
+# }
+ 
+ $J->{gflops} = int(100000*($J->{gflop}/$J->{wtime_max}))/100000.0;
+ if($J->{ntasks_logged} !=  $J->{ntasks} ) {
+  if($flags{extrapolate}) {
+
+   $J->{ntasks} = $J->{ntasks_logged}; 
+
+   for($irank=0;$irank < $J->{ntasks}; $irank++) {
+   }
+
+  } else {
+   print "IPM parse: ERROR incomplete jobdata $J->{ntasks_logged} of  $J->{ntasks} tasks found. \n";
+   print "IPM parse: consider using the '-x' parsing option\n";
+   exit(1);
+  }
+
+ }
+
+ $J->{pct_comm} =   int($J->{pct_comm}/$J->{ntasks}*100000)/100000.0;
+ $J->{gbytes_tx} = $J->{bytes_tx}/(1024.0*1024*1024.0);
+ $J->{gbytes_rx} = $J->{bytes_rx}/(1024.0*1024*1024.0);
+ 
+
+ if($J->{flags} & $IPM_APP_RUNNING) {
+  $J->{app_state} = "running";
+ } elsif($J->{flags} & $IPM_APP_INTERRUPTED) {
+  $J->{app_state} = "interrupted";
+ } elsif($J->{flags} & $IPM_APP_COMPLETED) {
+  $J->{app_state} = "completed";
+ } else {
+  $J->{app_state} = "unknown";
+ }
+
+ $J->{start_date_buf} = strftime("%m/%d/%y/%T", localtime($J->{start}));
+ $J->{final_date_buf} = strftime("%m/%d/%y/%T", localtime($J->{final}));
+
+####
+#  Aggregation (END)
+####
+
+####
+#  Report Generation 
+####
+
+ if($flags{report_terse} || $flags{report_full}) {
+ printf("##IPMv%s#####################################################################\n",$global_ipm_version);
+ printf("# \n");
+ printf("# command : %s (%s)\n", $J->{cmdline}, $J->{app_state});
+ printf("# host    : %-30s mpi_tasks : %d on %d nodes\n",
+	 $J->{hostname}, 
+	 $J->{ntasks},
+	 $J->{nhosts});
+ printf("# start   : %17s              wallclock : %f sec\n",
+         $J->{start_date_buf}, $J->{wtime_max});
+ printf("# stop    : %17s              %%comm     : %-.2f \n",
+         $J->{final_date_buf}, $J->{pct_comm});
+# if(flags & IPM_HPM_CANCELED)  deal with this
+ printf("# gbytes  : %.5e total              gflop/sec : %.5e total\n",
+        $J->{gbyte}, 
+        $J->{gflop}/$J->{wtime_max});
+# printf("# \n");
+# printf("# more information at http://www.nersc.gov/nusers/ipm/jv.php?%s.%s\n",
+#        $J->{username},
+#        $J->{cookie});
+ printf("#\n");
+ printf("%79s","###############################################################################\n");
+
+ }
+
+
+ if($flags{report_full}) {
+ }
+
+
+ if($flags{report_html}) {
+
+
+$html_dir = $J->{cmdline_base}."_".$J->{ntasks}."_".$J->{filename_base}."_ipm_".$J->{id};
+system("rm -rf $html_dir");
+mkdir($html_dir);
+$ntpo = $J->{ntasks} + 1;
+
+####
+#
+####
+
+ open(TFH,">.tmp_task_$cookie") or die("Can't open file\n");
+
+ print TFH<<EOF;
+
+#proc areadef
+  rectangle: 1 1 6 4
+  xrange: -1 $ntpo
+  yrange:  0 100
+  xaxis.stubs: inc
+  yaxis.stubs: inc
+  xaxis.label: MPI rank 
+  yaxis.label: % of maximum across MPI ranks
+  xaxis.stubrange: 0 $J->{ntasks}
+  xaxis.stubvert: yes
+
+EOF
+                                                                            
+ print TFH "//#rank ";
+ foreach $icounter (sort keys %{$J->{hpm_count} } ) {
+  print TFH "$icounter ";
+ }
+ print TFH "wtime utime stime mtime pct_comm gbyte gflop bytes_tx bytes_rx\n";
+  
+ print TFH "#proc getdata\ndata: ";
+
+ $i = 0;
+ foreach $irank (reverse(sort taskbymtime keys %{$J->{task}}) ) {
+  $T = \%{$J->{task}{$irank}};
+  print TFH "$irank ";
+  foreach $icounter (sort keys %{$T->{hpm_count} } ) {
+   if(defined($T->{hpm_count}{$icounter})) {
+#    print TFH "$T->{hpm_count}{$icounter}/$J->{hpm_stat}{$icounter}{max} ";
+    print TFH 100*$T->{hpm_count}{$icounter}/$J->{hpm_stat}{$icounter}{max}." ";
+   } else {
+    print TFH "= ";
+   }
+  } 
+#  print TFH " $T->{wtime} $T->{utime} $T->{stime} $T->{mtime} $T->{pct_comm} $T->{gbyte} $T->{gflop} $T->{bytes_tx} $T->{bytes_rx}\n";
+  print TFH 100*$T->{wtime}/$J->{wtime_max}." ".100*$T->{utime}/$J->{utime_max}." ".100*$T->{stime}/$J->{stime_max}." ".100*$T->{mtime}/$J->{mtime_max}." ".$T->{pct_comm}." ".100*$T->{gbyte}/$J->{gbyte_max}." ".100*$T->{gflop}/$J->{gflop_max}." ".100*$T->{bytes_tx}/$J->{bytes_tx_max}." ".100*$T->{bytes_rx}/$J->{bytes_rx_max}."\n";
+
+
+ }
+
+ print TFH "\n";
+ print TFH "\n";
+
+ $i = 2;
+ foreach $icounter (sort keys %{$T->{hpm_count} } ) {
+ print TFH<<EOF;
+
+#proc lineplot
+ xfield: 1
+ yfield: $i
+ legendlabel: $icounter
+ linedetails: color=$ipm_color[$i-1]
+ sort: yes
+
+EOF
+ $i = $i +1;
+}
+
+
+
+print TFH<<EOF;
+#proc lineplot
+  xfield: 1
+  yfield: $i
+  legendlabel: wtime
+  linedetails: color=$ipm_color[$i-1]
+ sort: yes
+
+EOF
+
+$i = $i +1;
+print TFH<<EOF;
+#proc lineplot
+  xfield: 1
+  yfield: $i
+  legendlabel: utime
+  linedetails: color=$ipm_color[$i-1]
+ sort: yes
+
+EOF
+
+$i = $i +1;
+print TFH<<EOF;
+#proc lineplot
+  xfield: 1
+  yfield: $i
+  legendlabel: stime
+  linedetails: color=$ipm_color[$i-1]
+ sort: yes
+
+EOF
+
+$i = $i +1;
+print TFH<<EOF;
+#proc lineplot
+  xfield: 1
+  yfield: $i
+  legendlabel: mtime
+  linedetails: color=$ipm_color[$i-1]
+ sort: yes
+
+EOF
+
+$i = $i +1;
+$i = $i +1;
+print TFH<<EOF;
+#proc lineplot
+  xfield: 1
+  yfield: $i
+  legendlabel: gbyte
+  linedetails: color=$ipm_color[$i-1]
+ sort: yes
+
+EOF
+
+$i = $i +1;
+print TFH<<EOF;
+#proc lineplot
+  xfield: 1
+  yfield: $i
+  legendlabel: gflop
+  linedetails: color=$ipm_color[$i-1]
+ sort: yes
+
+EOF
+
+$i = $i +1;
+print TFH<<EOF;
+#proc lineplot
+  xfield: 1
+  yfield: $i
+  legendlabel: bytes_tx
+  linedetails: color=$ipm_color[$i-1]
+ sort: yes
+
+EOF
+
+$i = $i +1;
+print TFH<<EOF;
+#proc lineplot
+  xfield: 1
+  yfield: $i
+  legendlabel: bytes_rx
+  linedetails: color=$ipm_color[$i-1]
+ sort: yes
+
+EOF
+
+print TFH<<EOF;
+
+#proc legend
+  location: max+0.4 max
+//  reverseorder: yes
+  seglen: 0.3
+
+EOF
+ close(TFH);
+
+ system("$PLOTICUS ./.tmp_task_$cookie  -png  -o $html_dir/load_multi_rank.png ");
+# unlink(".tmp_task_$cookie");
+
+ system("grep -v \"xfield: 1\" ./.tmp_task_$cookie  | sed -e 's/MPI rank /sorted index/'> ./.tmp_taskw_$cookie");
+ system("$PLOTICUS ./.tmp_taskw_$cookie  -png  -o $html_dir/load_multi_mtime.png ");
+ unlink(".tmp_task_$cookie");
+ unlink(".tmp_taskw_$cookie");
+####
+#
+#### 
+
+ foreach $irank (sort keys %{$J->{task}} ) {
+  foreach $jrank (sort keys %{$J->{task}} ) {
+       $J->{mpi}{data_tx}{$irank}{$jrank} = 0.0;
+       $J->{mpi}{data_rx}{$irank}{$jrank} = 0.0;
+       $J->{mpi}{time_tx}{$irank}{$jrank} = 0.0;
+       $J->{mpi}{time_rx}{$irank}{$jrank} = 0.0;
+  }
+ }
+
+####
+#  Loop over the entire {hash} data 
+####
+
+ foreach $icall (keys %{$J->{hash}}) {
+ $J->{mpi}{call}{$icall}{ttot} = 0.0;
+ $T->{mpi}{$icall}{ttot} = 0.0;
+  foreach $ibytes (keys %{$J->{hash}{$icall}}) {
+    $call_size_key = $icall."!".$ibytes;
+    $J->{mpi}{call_size}{$call_size_key}{count} = 0;
+   foreach $irank (keys %{$J->{hash}{$icall}{$ibytes}}) {
+    $T = \%{$J->{task}{$irank}};
+    foreach $iorank (keys %{$J->{hash}{$icall}{$ibytes}{$irank}}) {
+     foreach $ireg (keys %{$J->{hash}{$icall}{$ibytes}{$irank}{$iorank}}) {
+
+      if($mpi_call{$icall}{dat} =~ /^DATA_TX$/) {
+       $J->{mpi}{data_tx}{$irank}{$iorank} +=  $ibytes;
+       $J->{mpi}{time_tx}{$irank}{$iorank} +=  
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+#print "data_tx $irank $iorank $icall $ibytes \n";
+      }
+
+      if($mpi_call{$icall}{dat} =~ /^DATA_RX$/) {
+       $J->{mpi}{data_rx}{$irank}{$iorank} +=  $ibytes;
+       $J->{mpi}{time_rx}{$irank}{$iorank} += 
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+#print "data_rx $irank $iorank $icall $ibytes \n";
+      }
+
+      if($mpi_call{$icall}{dat} =~ /^DATA_TXRX$/) {
+       $J->{mpi}{data_rx}{$irank}{$iorank} +=  $ibytes;
+       $J->{mpi}{data_tx}{$irank}{$iorank} +=  $ibytes;
+       $J->{mpi}{time_tx}{$irank}{$iorank} += 
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+       $J->{mpi}{time_rx}{$irank}{$iorank} += 
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+#print "data_txrx $irank $iorank $icall $ibytes \n";
+      }
+
+# joint call_size (also store min, max, minrank, maxrank for each call_size) 
+
+    if($J->{mpi}{call_size}{$call_size_key}{count} == 0) {
+      $J->{mpi}{call_size}{$call_size_key}{tmin} =
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+      $J->{mpi}{call_size}{$call_size_key}{tmax} =
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+    }
+     $J->{mpi}{call_size}{$call_size_key}{count} += $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{count};
+#     print "call_size $call_size_key $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{count}\n";
+
+      $J->{mpi}{call_size}{$call_size_key}{ttot} +=
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+
+      if($J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot} > $J->{mpi}{call_size}{$call_size_key}{tmax}) {
+       $J->{mpi}{call_size}{$call_size_key}{tmax} =
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+      }
+
+      if($J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot} < $J->{mpi}{call_size}{$call_size_key}{tmin}) {
+       $J->{mpi}{call_size}{$call_size_key}{tmin} =
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+      }
+
+# J overall
+
+      $J->{mpi}{call}{$icall}{ttot} +=
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+
+# T specific 
+
+      $T->{mpi}{$icall}{ttot} +=
+	 $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+
+#      print "$icall $ibytes $irank $iorank $ireg $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot}\n";
+     }
+    }
+   }
+  }
+ }
+
+# foreach $ikey (reverse(sort jcallsizebyttot keys %{$J->{mpi}{call_size}})) {
+#  ($icall,$ibytes) = split('!',$ikey);
+#  print "call_size  $icall $ibytes :: $J->{mpi}{call_size}{$ikey}{count}\n";
+# }
+
+
+
+ %th = ();
+ $i = 0;
+ foreach $icall (keys %{$J->{mpi}{call}}) {
+  foreach $ibytes (keys %{$J->{hash}{$icall}}) {
+   foreach $irank (keys %{$J->{hash}{$icall}{$ibytes}}) {
+    foreach $iorank (keys %{$J->{hash}{$icall}{$ibytes}{$irank}}) {
+     foreach $ireg (keys %{$J->{hash}{$icall}{$ibytes}{$irank}{$iorank}}) {
+      $i++;
+      $th{$i}{ttot} = $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{ttot};
+      $th{$i}{tmin} = $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{tmin};
+      $th{$i}{tmax} = $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{tmax};
+      $th{$i}{count} = $J->{hash}{$icall}{$ibytes}{$irank}{$iorank}{$ireg}{count};
+      $th{$i}{rank} = $irank;
+      $th{$i}{orank} = $iorank;
+      $th{$i}{bytes} = $ibytes;
+      $th{$i}{call} = $icall;
+     }
+    }
+   }
+  }
+ }
+
+
+####
+# 
+####
+
+ open(TFH,">.tmp_mpi_$cookie") or die("Can't open file\n");
+ $i = 0;
+ print TFH <<EOF;
+#proc page
+  
+#proc areadef
+  rectangle: 0 0 2.5 2
+  xrange: 0 1
+  yrange: 0 1
+//  xaxis.tics: none
+//  yaxis.tics: none
+//  xaxis.stubhide: yes
+//  yaxis.stubhide: yes
+ 
+#proc getdata
+EOF
+
+ print TFH " data: ";
+ foreach $icall (reverse(sort jcallbyttot keys %{$J->{mpi}{call}})) {
+  print TFH "$icall $J->{mpi}{call}{$icall}{ttot} $ipm_color[$i]\n";
+  $ipm_color_bycall{$icall} = $ipm_color[$i];
+  $i++;
+#  print "$i $icall $J->{mpi}{call}{$icall}{ttot}  $ipm_color[$i]\n";
+ }
+
+print TFH<<EOF;
+
+#proc pie
+ firstslice: 0
+ datafield: 2
+ labelfield: 1
+ exactcolorfield: 3
+ center: 0.5(s) 0.6(s)
+ radius: 0.4(s)
+ 
+#proc legend
+ location: 1.1(s) 1(s)
+
+EOF
+
+ close(TFH);
+ system("$PLOTICUS ./.tmp_mpi_$cookie  -png  -o $html_dir/mpi_pie.png ");
+ unlink(".tmp_mpi_$cookie");
+
+####
+# 
+####
+
+ $i = 0;
+                                                                                
+ open(TFH,">.tmp_mpi_$cookie") or die("Can't open file\n");
+ print TFH<<EOF;
+#proc areadef
+  rectangle: 1 1 6 4
+  xrange: -1 $ntpo
+  yrange:  0 $J->{mtime_max}
+  xaxis.stubs: inc
+  yaxis.stubs: inc
+  xaxis.stubrange: 0 $J->{ntasks}
+  xaxis.stubvert: yes
+  xaxis.label: sorted index
+  yaxis.label: time in seconds
+                                                                                
+#proc getdata
+EOF
+ print TFH "data: ";
+ foreach $irank (reverse(sort taskbymtime keys %{$J->{task}} )) {
+  $T = \%{$J->{task}{$irank}};
+  print TFH "$i $irank $T->{wtime} $T->{utime} $T->{stime} $T->{mtime} ";
+  print TFH  $T->{wtime}-$T->{mtime};
+  print TFH  " ";
+  foreach $icall (reverse(sort jcallbyttot keys %{$J->{mpi}{call}})) {
+   if(defined($T->{mpi}{$icall}{ttot})) {
+    print TFH "$T->{mpi}{$icall}{ttot} ";
+   } else {
+    print TFH "= ";
+   }
+  }
+  print TFH "\n";
+  $i ++;
+ }
+                                                                                
+  $i = 0;
+  $stack = "";
+  foreach $icall (reverse(sort jcallbyttot keys %{$J->{mpi}{call}})) {
+                                                                                
+  $j = $i+8;
+                                                                                
+ if($i==0) {
+$barwidth= 4.0/$ntpo;
+print TFH<<EOF;
+                                                                                
+ #proc bars
+  lenfield: $j
+  locfield: 1
+  color: $ipm_color[$i]
+  legendlabel: $icall
+  barwidth: $barwidth
+  outline: no
+  #saveas A
+EOF
+ } else {
+print TFH<<EOF;
+ #proc bars
+  #clone: A
+  lenfield: $j
+  color: $ipm_color[$i]
+  legendlabel: $icall
+  stackfields: *
+                                                                                
+EOF
+ }
+                                                                                
+ $i++;
+  $stack = $stack." $j";
+ }
+                                                                                
+print TFH<<EOF;
+
+#proc legend
+  location: max+0.4 max
+  seglen: 0.3
+EOF
+                                                                                
+ close(TFH);
+                                                                                
+                                                                                
+ $cmd = "$PLOTICUS ./.tmp_mpi_$cookie -png -o $html_dir/mpi_stack_bymtime.png";
+system($cmd);
+
+
+####
+# 
+####
+
+ system("sed -e 's/locfield: 1/locfield: 2/;s/sorted index/MPI rank/' ./.tmp_mpi_$cookie > ./.tmp_mpi_$cookie_2");
+ system("mv ./.tmp_mpi_$cookie_2  ./.tmp_mpi_$cookie");
+
+ $cmd = "$PLOTICUS ./.tmp_mpi_$cookie -png -o $html_dir/mpi_stack_byrank.png";
+system($cmd);
+unlink(".tmp_mpi_$cookie");
+
+####
+# 
+####
+
+%buff_time = ();
+ foreach $ikey (reverse(sort jcallsizebyttot keys %{$J->{mpi}{call_size}})) {
+  ($jcall,$ibytes) = split('!',$ikey);
+  $buff_time{$ibytes} = 0;
+ }
+
+ foreach $icall (reverse(sort jcallbyttot keys %{$J->{mpi}{call}})) {
+  print "//\n";
+ }
+ foreach $ibytes (sort numy keys %buff_time) {
+  print "$ibytes ";
+ foreach $icall (reverse(sort jcallbyttot keys %{$J->{mpi}{call}})) {
+   $ikey = $icall."!".$ibytes;
+   if(defined($J->{mpi}{call_size}{$ikey})) {
+    $buff_time{$ibytes} += $J->{mpi}{call_size}{$ikey}{ttot};
+    print "$J->{mpi}{call_size}{$ikey}{ttot} ";
+   } else {
+    print "= ";
+   }
+  }
+  print "\n";
+ }
+
+%buff_time = ();
+
+####
+# 
+####
+
+ $i = 0;
+ $ntpo = $J->{ntasks} + 1;
+
+ $sw = 6;
+
+ open(TFH,">.tmp_mpi_$cookie") or die("Can't open file\n");
+ print TFH<<EOF;
+#proc areadef
+  rectangle: 1 1 $sw $sw
+  frame: width=0.5 color=0.3
+  xrange: -1 $J->{ntasks}
+  yrange: -1 $J->{ntasks}
+  xaxis.stubs: inc 
+  yaxis.stubs: inc 
+  xaxis.stubrange: 0 $ntmo
+  yaxis.stubrange: 0 $ntmo
+  xaxis.stubvert: yes
+  xaxis.label: source rank
+  yaxis.label: destination rank
+
+EOF
+
+ $data_max = -1.0;
+ foreach $irank (sort keys %{$J->{task}} ) {
+  foreach $jrank (sort keys %{$J->{task}} ) {
+   $data_tot = $J->{mpi}{data_tx}{$irank}{$jrank} + 0*$J->{mpi}{data_rx}{$irank}{$jrank};
+   if($data_tot > %data_max) {  $data_max = $data_tot; }
+
+  }
+ }
+
+
+# $data_max = $data_max/2.0;
+
+ foreach $irank (sort keys %{$J->{task}} ) {
+  foreach $jrank (sort keys %{$J->{task}} ) {
+   $data_tot = $J->{mpi}{data_tx}{$irank}{$jrank} + 0*$J->{mpi}{data_rx}{$irank}{$jrank};
+   if($data_tot > 0) {
+    printf TFH "#proc rect\n rectangle: %d(s) %d(s) %d(s) %d(s)\n color gray(%.2f)\n\n", $irank, $jrank, $irank+1,$jrank+1, $data_tot/$data_max;
+   }
+  }
+ } 
+
+ print TFH "\n\n";
+
+ close(TFH);
+
+ $cmd = "$PLOTICUS ./.tmp_mpi_$cookie -png -o $html_dir/mpi_topo_data.png";
+system($cmd);
+
+
+####
+# 
+####
+ $i = 0;
+ open(TFH,">.tmp_mpi_$cookie") or die("Can't open file\n");
+
+$ntmo = $J->{ntasks}-1;
+
+print TFH<<EOF;
+#proc areadef
+ rectangle: 1 1 6 6 
+ xrange: -1 $J->{ntasks}
+ yrange: -1 $J->{ntasks}
+ frame: width=0.5 color=0.3
+ xaxis.stubs: inc 
+ yaxis.stubs: inc 
+ xaxis.stubrange: 0 $ntmo
+ yaxis.stubrange: 0 $ntmo
+ xaxis.stubvert: yes
+ xaxis.label: self rank
+ yaxis.label: other rank
+
+#proc line 
+ points:  0(s) 0(s) $J->{ntasks}(s)  $J->{ntasks}(s)
+
+EOF
+
+# srange area = (ntasks+1)*(ntasks+1)
+# sum cicle area = 1/4 * srange area
+#
+ $carea = 0.0;
+ foreach $i (keys %th) {
+  $carea += 3.14159265*($th{$i}{ttot}*$th{$i}{ttot});
+ }
+
+ $cscale = sqrt(0.01*($ntmo+2)*($ntmo+2)/$carea);
+
+ $imax = -1;
+ foreach $i (reverse sort hashibyttot keys %th) {
+  if($imax == -1) {
+   $imax = $i;
+  }
+  if($th{$i}{orank} >= 0 && $th{$i}{bytes} > 0) {
+   $r = $th{$i}{ttot}*$cscale;
+
+   if($r < 0.01 ) { $r = 0.01 ; }
+
+   printf TFH "#proc symbol\n";
+   printf TFH " location: %f(s) %f(s)\n", $th{$i}{rank}, $th{$i}{orank};
+   printf TFH " symbol: shape=nicecircle style=fill fillcolor=%s radius=%f\n", $ipm_color_bycall{$th{$i}{call}}, $r;
+  }
+ }
+ 
+ close(TFH);
+ $cmd="$PLOTICUS -png -o $html_dir/mpi_topo_ttot.png ./.tmp_mpi_$cookie";
+ system($cmd);
+
+ unlink(".tmp_mpi_$cookie");
+
+
+####
+# 
+####
+
+ $i = 0;
+ open(TFH,">.tmp_mpi_$cookie") or die("Can't open file\n");
+ foreach $i (reverse sort hashibyttot keys %th) {
+ }
+
+ close(TFH);
+ unlink(".tmp_mpi_$cookie");
+
+###
+# Report generation
+###
+
+open(FH,"> $html_dir/index.html") or die("Can't open \"$html_dir/index.html\"\n");
+
+print FH<<EOF;
+<html>
+<head>
+<title> IPM profile for $J->{id} </title>
+</head>
+<body>
+<H2> IPM profile for $J->{id}</H2>
+<table border=1 width=100%>
+<tr>
+ <td width=100% colspan=2 bgcolor="lightblue"> 
+ command: $J->{cmdline}  
+ </td>
+</tr> 
+EOF
+@tmp = (
+["code:", "$J->{code}", "state:", "$J->{app_state}"],
+["username:", "$J->{username}", "group:", "$J->{groupname}"],
+["host:", "$J->{hostname} ($J->{mach_info})", "mpi_tasks:", "$J->{ntasks} on $J->{nhosts} hosts"],
+["start:", "$J->{start_date_buf}", "wallclock:", "$J->{wtime_max} sec"],
+["stop:", "$J->{final_date_buf}", "%comm:", "$J->{pct_comm}"],
+["max memory:", "$J->{gbyte} gbytes", "total gflop/sec:", "$J->{gflops}"],
+["switch(send):", "$J->{gbytes_tx} gbytes", "switch(recv):", "$J->{gbytes_rx} gbytes"],
+);
+	 
+foreach $i (@tmp) {
+print FH<<EOF;
+<tr>
+ <td width=50%> 
+ <table width=100%> <tr>
+ <td width=50% align=left> @{$i}[0] </td> <td width=50% align=right> @{$i}[1] </td>
+ </tr> </table>
+ </td>
+
+ <td width=50%> 
+ <table width=100%> <tr>
+ <td width=50% align=left> @{$i}[2] </td> <td width=50% align=right> @{$i}[3] </td>
+ </tr> </table>
+ </td>
+
+</tr>
+EOF
+}
+@tmp = ();
+
+
+print FH<<EOF;
+</table>
+
+<hr>
+<table border=1 width=100%>
+<tr width=100%>
+<td width=50% valign=top>
+<table width=100% border=1>
+<tr> <th valign=top colspan=3 bgcolor="lightblue"> <H3> Computation </H3> </th> </tr>
+<tr>
+ <th valign=top bgcolor="lightblue"> Event </th>
+ <th valign=top bgcolor="lightblue"> Count </th>
+ <th valign=top bgcolor="lightblue"> Pop </th>
+</tr>
+EOF
+
+foreach $icounter (sort keys %{$J->{hpm_count}} ) {
+ if($J->{hpm_pop}{$icounter} == $J->{ntasks}) {
+  $popstr = " <td align=center>*</td> ";
+ } else {
+  $popstr =" <td align=right> $J->{hpm_pop}{$icounter} </td>";
+ }
+ print FH "<tr><td> $icounter </td><td align=right> $J->{hpm_count}{$icounter} </td>$popstr</tr>\n";
+}
+  
+
+print FH<<EOF;
+</table>
+</td>
+<td width=50%>
+<table width=100% border=1>
+<tr> <th bgcolor="lightblue"> <H3> Communication </H3> </th> </tr>
+<tr> <th bgcolor="lightblue"> % of MPI Time </th> </tr>
+<tr>
+<td>
+<center>
+<img src="mpi_pie.png">
+</center>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+
+<table border=1 width=100%>
+<tr>
+<th align=left bgcolor=lightblue colspan=5> HPM Counter Statistics </th>
+</th>
+</tr>
+<tr>
+<tr>
+<th align=left bgcolor=lightblue> Event </th>
+<th align=left bgcolor=lightblue> Ntasks </th>
+<th align=left bgcolor=lightblue> Avg </th>
+<th align=left bgcolor=lightblue> Min </th>
+<th align=left bgcolor=lightblue> Max </th>
+</tr>
+<tr>
+EOF
+
+foreach $icounter (sort keys %{$J->{hpm_count}} ) {
+ print FH "<tr><td> $icounter </td>\n";
+ if($J->{hpm_pop}{$icounter} == $J->{ntasks}) {
+  print FH " <td align=center>*</td> ";
+ } else {
+  print FH " <td align=right> $J->{hpm_pop}{$icounter} </td>";
+ }
+ printf FH "<td align=right> %.2f </td>\n", $J->{hpm_count}{$icounter}/$J->{hpm_pop}{$icounter};
+ print FH "<td align=right> ".$J->{hpm_stat}{$icounter}{min}." (".$J->{hpm_stat}{$icounter}{min_rank}.") </td> \n";
+ print FH "<td align=right> ".$J->{hpm_stat}{$icounter}{max}." (".$J->{hpm_stat}{$icounter}{max_rank}.") </td> \n";
+}
+  
+
+print FH<<EOF;
+</table>
+</tr>
+</table>
+
+<table border=1 width=100%>
+<tr>
+<th align=left bgcolor=lightblue colspan=8> Communication Event Statistics </th>
+</th>
+</tr>
+<tr>
+<tr>
+<th align=left bgcolor=lightblue> &nbsp; </th>
+<th align=left bgcolor=lightblue> Buffer Size </th>
+<th align=left bgcolor=lightblue> Ncalls </th>
+<th align=left bgcolor=lightblue> Total Time </th>
+<th align=left bgcolor=lightblue> Min Time </th>
+<th align=left bgcolor=lightblue> Max Time </th>
+<th align=left bgcolor=lightblue> %MPI </th>
+<th align=left bgcolor=lightblue> %Wall </th>
+</tr>
+EOF
+
+ foreach $ikey (reverse(sort jcallsizebyttot keys %{$J->{mpi}{call_size}})) {
+  ($icall,$ibytes) = split('!',$ikey);
+  $pct_mpi =  100 * ( $J->{mpi}{call_size}{$ikey}{ttot} / $J->{mtime} );
+  $pct_wall =  100 * ( $J->{mpi}{call_size}{$ikey}{ttot} / ( $J->{ntasks} * $J->{wtime_max}) );
+
+  
+  if($pct_wall < 0.01) {next;}
+
+  printf FH "<tr><td align=left>%s</td><td align=right> %d </td><td align=right> %d </td><td align=right> %.3f </td><td align=right> %.3f </td><td align=right> %.3f </td><td align=right> %.2f </td><td align=right> %.2f </td> \n", $icall, $ibytes, $J->{mpi}{call_size}{$ikey}{count}, $J->{mpi}{call_size}{$ikey}{ttot}, $J->{mpi}{call_size}{$ikey}{tmin},$J->{mpi}{call_size}{$ikey}{tmax}, $pct_mpi , $pct_wall;
+ }
+
+
+print FH<<EOF;
+</table>
+
+<table border=1 width=100%>
+
+<tr>
+<th align=left bgcolor=lightblue> Load balance by task (sorted by MPI rank) </th>
+</th>
+</tr>
+<tr>
+<td>
+<img src="load_multi_rank.png">
+</td>
+</tr>
+
+<tr>
+<th align=left bgcolor=lightblue> Load balance by task (sorted by MPI time) </th>
+</th>
+</tr>
+<tr>
+<td>
+<img src="load_multi_mtime.png">
+</td>
+</tr>
+
+<tr>
+<th align=left bgcolor=lightblue> Communication by task (sorted by MPI rank) </th>
+</th>
+</tr>
+<tr>
+<td>
+<img src="mpi_stack_byrank.png">
+</td>
+</tr>
+
+<tr>
+<th align=left bgcolor=lightblue> Communication by task (sorted by MPI time) </th>
+</th>
+</tr>
+<tr>
+<td>
+<img src="mpi_stack_bymtime.png">
+</td>
+</tr>
+
+</table>
+
+<table width=100% border=1>
+<tr>
+<th align=left bgcolor=lightblue> Communication Topology : point to point data flow </th>
+</th>
+</tr>
+<tr>
+<td>
+<img src="mpi_topo_data.png">
+</td>
+</tr>
+</table>
+
+<table width=100% border=1>
+<tr>
+<th align=left bgcolor=lightblue> Communication Topology : Time </th>
+</th>
+</tr>
+<tr>
+<td>
+<img src="mpi_topo_ttot.png">
+</td>
+</tr>
+</table>
+
+<table width=100% border=1>
+<tr>
+<th align=left bgcolor=lightblue> Program events </th>
+</th>
+</tr>
+<tr>
+<td>
+<center><img src="event_rank_ttot.png"></center>
+</td>
+</tr>
+</table>
+
+<table border=1 width=100%>
+<tr>
+<th valign=top align=left bgcolor=lightblue> Hostlist </th>
+<th valign=top align=left bgcolor=lightblue> Tasks </th>
+</tr>
+EOF
+
+ foreach $ihost (sort keys %{$J{hostlist}}) {
+  $hlist = "<tr><td>$ihost</td><td>";
+  foreach $irank (sort keys %{$J{hostlist}{$ihost}}) {
+   $hlist = $hlist."$irank,";
+  }
+  chop($hlist);
+  $hlist = $hlist."</td></tr>\n";
+  print FH $hlist;
+ }
+
+
+print FH <<EOF;
+
+</td>
+</tr>
+</table>
+
+<table border=1 width=100%>
+<tr>
+<th align=left bgcolor=lightblue> Executable </th>
+</th>
+</tr>
+<tr>
+<td width=100%>
+$jobs{$cookie}{task}{0}{exec}
+</td>
+</tr>
+<tr>
+<th align=left bgcolor=lightblue> Executable Binary Details </th>
+</th>
+</tr>
+<tr>
+<td>
+<pre>
+$jobs{$cookie}{task}{0}{exec_bin}
+</pre>
+</td>
+</tr>
+</table>
+
+<table border=1 width=100%>
+<tr>
+<th align=left bgcolor=lightblue> Environment (task 0) </th>
+</th>
+</tr>
+<tr>
+<td width=100%>
+<font size=-4>
+$J->{env};
+</font>
+</td>
+</tr>
+</table>
+
+EOF
+
+if($flags{report_devel}) {
+print FH<<EOF;
+
+<table border=1 width=100%>
+<tr>
+<th align=left bgcolor=lightblue> IPM Developer Section </th>
+</th>
+</tr>
+<tr>
+<td width=100%>
+not yet. 
+</td>
+</tr>
+</table>
+ 
+EOF
+}
+
+print FH<<EOF;
+
+<hr>
+<table width=100%>
+ <tr>
+  <td align=right>
+	<a href="http://www.nersc.gov/projects/ipm">
+	<img alt="powered by IPM" src="http://www.nersc.gov/projects/ipm/ipm_powered.png">
+	</a>
+</td>
+ </tr>
+</table>
+
+</body>
+</html>
+EOF
+close FH;
+ }
+
+}
+

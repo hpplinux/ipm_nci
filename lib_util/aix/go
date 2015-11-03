@@ -1,0 +1,30 @@
+
+rm -f ipm.exp
+rm -rf 32 64
+rm -f *.o *.a 
+
+rm -rf lib
+mkdir lib
+rm -rf tmp*
+
+cp ../lib/libipm.a .
+export USE_PMAPI=-lpmapi 
+export OBJECT_MODE=32
+export ORGIMPIPATH=/usr/lpp/ppe.poe
+./build_profiled_lib
+
+cp ../lib/libipm.a .
+export OBJECT_MODE=64
+./build_profiled_lib_64
+
+./mklib96 32/libmpi_r.a 64/libmpi_r.a libmpi_r.a
+./mklib96 32/libmpi_X.a 64/libmpi_X.a libmpi_X.a
+./mklib96 32/libvtd_X.a 64/libvtd_X.a libvtd_X.a
+
+echo "now do --->  cp *.a /usr/common/usg/ipm/xxx/lib/"
+
+mv libmpi_r.a libmpi_X.a libvtd_X.a lib
+rm -f ipm.exp
+rm -rf 32 64
+rm -f *.o 
+cp lib/* ../lib

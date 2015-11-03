@@ -1,0 +1,20 @@
+#!/bin/sh
+
+WGET=`which wget`
+EMAIL=dskinner@nersc.gov
+TARBALL=ipm-nightly.tar
+URL=http://www.nersc.gov/~dskinner/$TARBALL
+HOST=`hostname`
+
+if[ $HOST -eq "lego"] ; then MACH=lego; fi
+if[ $HOST -eq "d200109-en0.nersc.gov"] ; then MACH=seaborg; fi
+if[ $HOST -eq "davinci"] ; then MACH=davinci; fi
+if[ $HOST -eq "jdvin01"] ; then MACH=jacquard; fi
+
+$WGET $URL
+rm -rf ipm-hpc
+tar -xf $TARBALL
+cd ipm
+
+gmake MACH=$MACH nightly
+

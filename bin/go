@@ -1,0 +1,10 @@
+#make clean; make  ; sleep 5; clear ; ./go
+
+echo "./ipm pwd  " > gogo
+echo "sleep 1 " >> gogo 
+chmod a+x ./gogo
+
+rm .ipm_*
+make ipm
+mpiexec -n 4 ./gogo
+

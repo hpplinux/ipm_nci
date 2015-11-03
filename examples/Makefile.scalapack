@@ -1,0 +1,47 @@
+ARCH=IBMSP
+MATRIX_SIZE=4096
+MATRIX_SIZE=1024
+NPROCS=-nodes 1 -tasks_per_node 4
+
+IBMSP_CC=xlc_r 
+IBMSP_CXX=xlC_r 
+IBMSP_F90=xlf90_r
+IBMSP_MPICC=mpcc_r 
+IBMSP_MPICXX=mpCC_r -cpp
+IBMSP_MPIF90=mpxlf90_r
+IBMSP_CFLAGS=-DIBM -DMATRIX_SIZE=$(MATRIX_SIZE)
+IBMSP_FFLAGS=-DIBM -WF,-DMATRIX_SIZE=$(MATRIX_SIZE)
+IBMSP_BLAS=-lblacssmp
+IBMSP_PBLAS=-lblacssmp -lpesslsmp
+
+CC=$($(ARCH)_CC)
+CXX=$($(ARCH)_CXX)
+F90=$($(ARCH)_F90)
+MPICC=$($(ARCH)_MPICC)
+MPICXX=$($(ARCH)_MPICXX)
+MPIF90=$($(ARCH)_MPIF90)
+CFLAGS=$($(ARCH)_CFLAGS)
+FFLAGS=$($(ARCH)_FFLAGS)
+BLAS=$($(ARCH)_BLAS)
+PBLAS=$($(ARCH)_PBLAS)
+
+all: ex5_f ex5_c ex5_C
+
+ex5_f: ex5.F
+	$(MPIF90) $(FFLAGS) -o ex5_f $(PBLAS) ex5.F
+
+ex5_c: ex5.c
+	$(MPICC) $(CFLAGS) -o ex5_c $(PBLAS) ex5.c
+
+ex5_C: ex5.C
+	$(MPICXX) $(CFLAGS) -o ex5_C $(PBLAS) ex5.C
+
+
+test: ex5_f ex5_c ex5_C
+	./ex5_f $(NPROCS)
+	./ex5_c $(NPROCS)
+	./ex5_C $(NPROCS)
+
+clean:
+	rm -rf ex5_f  ex5_c ex5_C
+

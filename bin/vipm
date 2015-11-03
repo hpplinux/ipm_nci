@@ -1,0 +1,75 @@
+#!/bin/bash
+
+AWK=/usr/common/usg/gnu/bin/awk
+GNUPLOT=/usr/common/usg/gnuplot/3.8j/bin/gnuplot
+
+usage()
+{
+        echo "$PROG: usage: $PROG file lower-limit upper-limit" >&2
+}
+
+
+case $# in
+    1)  export FILE=$1 ;;
+    2)  export FILE=$1 ; export START=$2 ; export STOP=9999999999 ;;
+    3)  export FILE=$1 ; export START=$2 ; export STOP=$3 ;;
+    *)  usage ; exit 2 ;;
+esac
+
+
+if [ "$START" != "" ];then
+grep NERSC_TIME $FILE | $AWK  '{ttime=$5};(ttime>=ENVIRON["START"] && ttime<=ENVIRON["STOP"])'  > mpiv_all.txt
+else
+grep NERSC_TIME $FILE >  mpiv_all.txt
+fi
+
+TAGS=`$AWK '{print $4}' mpiv_all.txt | sort | uniq`
+RANKS=`$AWK '{print $2}' mpiv_all.txt | sort | uniq`
+TZERO=`$AWK '(NR==1){print $5}' mpiv_all.txt`
+
+$AWK '(match($4,/^([io])_(.+)/,tag)==1){rank = $2; if(tag[1]=="i") {tim[rank,tag[2]] = $5} else {print  tag[2], $2,  tim[rank,tag[2]]; print tag[2], $2, $5; print tag[2]} }' mpiv_all.txt > mpiv_all_lines.txt
+ 
+grep -v " i_" mpiv_all.txt | grep -v " o_"  > mpiv_all_dots.txt
+
+DTAGS=`$AWK '{print $4}' mpiv_all_dots.txt | sort | uniq`
+LTAGS=`$AWK '{print $1}' mpiv_all_lines.txt | sort | uniq`
+
+echo $TAGS
+
+
+#########
+#########
+
+#echo  "unset key " > pll
+echo  "set key below samplen 1 spacing 1" > pll
+
+echo  "unset mouse " >> pll
+#echo  "set xdata time " >> pll
+#echo  "set timefmt \"%s\" " >> pll
+#echo  "set format x \"%m/%d\" " >> pll
+echo  "set bars 2 " >> pll
+if [ "$START" != "" ];then
+echo  "set ar 1 from $START,0 to $START,11000 lw 2 back " >> pll
+fi
+if [ "$STOP" != "" ];then
+echo  "set ar 2 from $STOP,0 to $STOP,11000 lw 2 back " >> pll
+fi
+echo -n "p " >> pll
+for i in $DTAGS; do
+ echo "\"<grep $i mpiv_all_dots.txt\" u (\$5-$TZERO):2 t'$i'w p pt 5,\\" >> pll
+done
+for i in $LTAGS; do
+ echo "\"<awk '(\$1==\\\"$i\\\"){print \$2, \$3}' mpiv_all_lines.txt \" u (\$2-$TZERO):1 t'$i'w l lw 5,\\" >> pll
+done
+echo "0 w d t''" >> pll
+echo "set xrange [] writeback" >> pll
+
+echo "pause -1 " >> pll
+
+
+
+#gnuplot -fn 5x7 pll
+$GNUPLOT  pll
+
+#rm mpiv_all.txt mpiv_all_lines.txt mpiv_all_dots.txt
+

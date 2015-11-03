@@ -1,0 +1,12 @@
+1|LIBC_MALLOC_ID|void *malloc(size_t size)|DATA_MEMPLUS
+2|LIBC_CALLOC_ID|void *calloc(size_t nmemb, size_t size)|DATA_MEMPLUS
+3|LIBC_REALLOC_ID|void *realloc(void *ptr, size_t size)|DATA_MEMPLUS
+4|LIBC_FREE_ID|void free(void *ptr)|DATA_MEMMINUS
+5|LIBC_CREAT_ID|creat(const char *pathname, mode_t mode)|DATA_NONE
+6|LIBC_OPEN_ID|int open(const char *pathname, int flags, mode_t mode)|DATA_NONE
+7|LIBC_CLOSE_ID|int close(int fd)|DATA_NONE
+8|LIBC_READ_ID|ssize_t read(int fd, void *buf, size_t count)|DATA_READ
+9|LIBC_WRITE_ID|ssize_t write(int fd, const void *buf, size_t count)|DATA_WRITE
+10|LIBC_LSEEK_ID|off_t lseek(int fildes, off_t offset, int whence)|DATA_NONE
+11|LIBC_MMAP_ID|void *  mmap(void *start, size_t length, int prot , int flags, int fd, off_t offset)|DATA_NONE
+12|LIBC_MUNMAP_ID|int munmap(void *start, size_t length)|DATA_NONE

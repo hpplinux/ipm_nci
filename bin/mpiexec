@@ -1,0 +1,39 @@
+#!/bin/sh
+
+###
+# Wrapper for mpiexec that isolates LD_PRELOADING to the parallel 
+# execution in a job. This avoids LD_PRELOAD for serial sections.
+# dskinner@nersc.gov Sep 20005
+###
+
+###
+# IPM_PRELOAD and IPM_DEBUG are env vars recognized by libipm
+###
+
+MPIEXEC=/usr/common/usg/mpiexec/0.80/bin/mpiexec
+MPIEXEC=/usr/common/usg/mpich2-1.0.2p1/bin/mpiexec
+IPMLIBS=/usr/common/usg/ipm/0.902/lib/libipm.so
+LD_PRELOAD_ORIG=$LD_PRELOAD
+
+if [ "$IPM_PRELOAD" != "" ] && [ "$IPM_PRELOAD" != "off" ] ; then
+ 
+ if [ "$LD_PRELOAD" != "" ] ; then
+  export LD_PRELOAD=$LD_PRELOAD:$IPMLIBS 
+ else 
+  export LD_PRELOAD=$IPMLIBS
+ fi
+
+ if [ "$IPM_DEBUG" != "" ] ; then 
+  echo "IPM: LD_PRELOAD=$LD_PRELOAD";
+ fi
+
+$MPIEXEC $@
+
+export LD_PRELOAD=$LD_PRELOAD_ORIG
+
+else 
+
+$MPIEXEC $@
+
+fi
+

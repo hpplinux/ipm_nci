@@ -1,0 +1,1724 @@
+#!/usr/bin/env bash 
+
+###
+# This is not a real configure script. It simply
+# 1) tries to determine the specific machine you're on by hpcname
+# 2) creates make_config which has the vars that Makefile needs that hpcname
+# 3) creates config.h with system specific values needed in code sections
+# 4) lets you override the above (careful)
+# 5) does some simple tests to see if the choices work
+#
+# If you want to properly autoconf this code I think it would be a good idea
+# and I'd be willing to help. It seems very tricky to me. See hpcname - DES
+###
+
+###
+# options
+###
+
+function usage  {
+
+cat <<EOF
+Usage: configure [options] 
+Options: [defaults in brackets after descriptions]
+Configuration:
+  --help
+  --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
+  --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
+  --prefix=PREFIX
+  --logdir=PATH
+  --with-dynwrap 			       wrap with dynamic func pointers
+  --with-initfini			       test MPI_Init/Finalize only
+  --with-hpcname=[franklin|datastar|ranger|bassi..] configure hpcname=X [guessed]
+  --with-arch=[POWER|X86|AMD64|BGL|XT3|XT4|ALTIX..] configure arch=X [guessed]
+  --with-os=[LINUX|AIX|NEC|BGL|UNICOS..]            configure os=X [guessed]
+  --with-cpu=[NEHALEM|PENTIUM_M|PWR4|PWR5|OPTERTON|WOODCREST|CORES2DUO..]      configure cpu=X [guessed]
+  --switch=[COLONY|FEDERATION|PROC_IB0|..]     configure switch=X [guessed]
+  --with-compiler=[GNU|IBM|INTEL|PATH|PGI|CRAY..]   configure compiler=X [guessed]
+  --with-papiroot=dir 			       use papi include/libs in dir
+  --with-hpm=[PAPI|PMAPI|DISABLED..]           configure hpm=X [guessed]
+  --with-io=[posix|mpiio]                      configure io=X [guessed]
+  --with-stimer=[RDTSC|READREALTIME|GTOD...]   use serial timer=X [guessed]
+  --with-gtimer=[WTIME|RDTSC|GTOD...]          use global timer=X [guessed]
+  --with-ipmkeyfile=file		       use file for call configuration 
+  --with-testtasks=n			       use n tasks in tests (default 2)
+  --without-log                                don't save profiles to disk
+  --with-ipm-start=[on|off]                    ipm is on/off by default
+
+  the hpcname utility shows the full range of options for the above 
+  arch, os, cpu, switch, and compiler options. Try "hpcname -h"
+
+Some influential environment variables:
+  CC          C compiler command
+  CFLAGS      C compiler flags
+  FFLAGS      Fortran compiler flags
+  LDFLAGS     linker flags, e.g. -L<lib dir> if you have libraries in a
+              nonstandard directory <lib dir>
+  CPPFLAGS    C/C++ preprocessor flags, e.g. -I<include dir> if you have
+              headers in a nonstandard directory <include dir>
+  CPP         C preprocessor
+  CXX         C++ compiler command
+  F77         Fortran 77 compiler command
+  F90         Fortran 90 compiler command
+  LINKER      Command to link serial executables 
+  MPILINKER   Command to link MPI executables 
+
+Use these variables to override the choices made by 'configure' or to help
+it to find libraries and programs with nonstandard names/locations.
+
+EOF
+
+exit 0
+
+}
+
+
+###
+# Defaults
+###
+
+if [ "$HOST" == "" ] ; then HOST=`hostname` ; fi
+if [ "$BUILD_ROOT" == "" ] ; then BUILD_ROOT=$PWD ;  fi
+if [ "$TEST_DIR" == "" ] ; then TEST_DIR="$PWD/.test" ;  fi
+if [ "$AR" == "" ] ; then AR="ar" ;  fi
+if [ "$RM" == "" ] ; then RM="rm" ;  fi
+if [ "$LD" == "" ] ; then LD="ld" ;  fi
+
+IPM_KEYFILE="$PWD/ipm_key" ;
+#IPM_LOG_DIR=./;
+PREFIX=/usr/local/packages/ipm
+
+# By default this is now read at runtime
+# mainly because too many machines out there have a different cpu
+# on the login node and the compute nodes.
+TICKCHECK=no;
+
+CONFIG_H=$BUILD_ROOT/include/config.h
+CONFIG_M=$BUILD_ROOT/make_config
+CONFIG_LOG=$BUILD_ROOT/config.log
+
+rm -rf $CONFIG_LOG
+
+if [ "$HPCNAME" == "" ]; then 
+ HPCNAME=`./bin/hpcname -n`
+fi
+
+if [ "$WRAPMAKER" == "" ]; then WRAPMAKER="$PWD/bin/make_wrappers" ; fi 
+
+###
+# First pass through arguments
+###
+
+for opt in "$@" ; do
+ case "$opt" in
+ -*=*) arg=`echo "$opt" | sed 's/[-_a-zA-Z0-9]*=//'` ;;
+ *) arg= ;;
+ esac
+
+###
+# Unset variables that are known to exist on some machines that have
+# name conflicts with the variables in this script
+###
+
+ 
+
+ case "$opt" in 
+  --help) usage ;;
+  --with-hpcname=*) HPCNAME=$arg ;;
+  --with-arch=*) ARCH=$arg ;;
+  --with-switch=*) SWITCH=$arg ;;
+  --with-os=*) OS=$arg ;;
+  --with-cpu=*) CPUIPM=$arg ;;
+  --with-compiler=*) COMPILER=$arg ;;
+  --with-hpm=*) TRY_HPM=$arg ;;
+  --with-ipmkeyfile=*) IPM_KEYFILE=$arg ;;
+  --with-testtasks=*) TEST_TASKS=$arg ;;
+  --with-ipm-start=*) IPM_START_STATE=$arg ;;
+  --with-papiroot=*) TRY_HPM="PAPI" ; TRY_HPM_CFLAGS="-I$arg/include" ; TRY_HPM_LDFLAGS="-L$arg/lib" ;;
+  --prefix=*) PREFIX="$arg" ;;
+  --without-log*) CFLAGS="$CFLAGS -DIPM_DISABLE_LOG" ;;
+  --with-stimer=*) TRY_STIMER=$arg ;;
+ esac 
+
+done
+
+###
+# Guessed items
+###
+
+
+if [ "$HPCNAME" != "unknown" ] ; then 
+ if [ "$CPUIPM" == "" ]; then CPUIPM=`./bin/hpcname --cpu` ; fi
+ if [ "$ARCH" == "" ]; then ARCH=`./bin/hpcname --arch` ; fi
+ if [ "$OS" == "" ]; then OS=`./bin/hpcname --os` ; fi
+ if [ "$SWITCH" == "" ]; then SWITCH=`./bin/hpcname --switch` ; fi
+ if [ "$COMPILER" == "" ]; then COMPILER=`./bin/hpcname --compiler` ; fi
+ if [ "$IPM_LOG_DIR" == "" ]; then IPM_LOG_DIR=`./bin/hpcname --logdir` ; fi
+ if [ "$IPM_KEYFILE" == "" ]; then IPM_KEYFILE="$PWD/ipm_key" ; fi
+ if [ "$TICKCHECK" == "" ] ; then TICKCHECK="yes" ;  fi
+fi
+
+ if [ "$TEST_TASKS" == "" ]; then TEST_TASKS=`./bin/hpcname --testtasks` ; fi
+ if [ "$TEST_TASKS" == "" ]; then TEST_TASKS="2" ; fi
+
+MACH=$OS"_"$ARCH"_"$COMPILER
+
+# turn of EXEC info by default - it breaks in too many places
+ CFLAGS="$CFLAGS -DIPM_DISABLE_EXECINFO"
+if [ "$ARCH" == "XT3" -o "$ARCH" == "XT4" -o "$ARCH" == "XT5" ] ; then
+ CFLAGS="$CFLAGS -DIPM_DISABLE_PWENT"
+fi
+
+###
+# Things we know about compilers {
+###
+
+if [ "$COMPILER" == "GNU" ] ; then
+ if [ "$CC" == "" ]; then TRY_CC="gcc" ; fi
+ if [ "$CXX" == "" ]; then TRY_CXX="g++" ; fi
+ if [ "$F77" == "" ]; then TRY_F77="gfortran" ; fi
+ if [ "$F90" == "" ]; then TRY_F90="gfortran" ; fi
+fi
+
+if [ "$COMPILER" == "PATH" ] ; then
+ if [ "$CC" == "" ]; then TRY_CC="pathcc" ; fi
+ if [ "$CXX" == "" ]; then TRY_CXX="pathCC" ; fi
+ if [ "$F77" == "" ]; then TRY_F77="pathf77" ; fi
+ if [ "$F90" == "" ]; then TRY_F90="pathf90" ; fi
+fi
+
+if [ "$COMPILER" == "PGI" ] ; then
+ if [ "$CC" == "" ]; then TRY_CC="pgcc" ; fi
+ if [ "$CXX" == "" ]; then TRY_CXX="pgCC" ; fi
+ if [ "$F77" == "" ]; then TRY_F77="pgf90" ; fi
+ if [ "$F90" == "" ]; then TRY_F90="pgf90" ; fi
+fi
+
+if [ "$COMPILER" == "INTEL" ] ; then
+ if [ "$CC" == "" ]; then TRY_CC="icc" ; fi
+ if [ "$CXX" == "" ]; then TRY_CXX="icc" ; fi
+ if [ "$F77" == "" ]; then TRY_F77="ifort" ; fi
+ if [ "$F90" == "" ]; then TRY_F90="ifort" ; fi
+ if [ "$F77" == "" ]; then TRY_MPIF77="ifort -lmpi" ; fi
+ if [ "$F90" == "" ]; then TRY_MPIF90="ifort -lmpi" ; fi
+fi
+
+if [ "$COMPILER" == "IBM" ] ; then
+ if [ "$CC" == "" ] ; then TRY_CC="xlc" ; fi 
+ if [ "$CXX" == "" ] ; then TRY_CXX="xlC" ; fi 
+ if [ "$F77" == "" ] ; then TRY_F77="xlf" ; fi
+ if [ "$F90" == "" ] ; then TRY_F90="xlf90" ; fi
+fi
+
+###
+# Things we know about MACH triples {
+###
+
+if [ "$MACH" == "AIX_IBMSP_IBM" ] ; then 
+ if [ "$MPICC" == "" ] ; then TRY_MPICC="mpcc_r" ; fi
+ if [ "$MPIF77" == "" ] ; then TRY_MPIF77="mpxlf_r" ; fi
+ if [ "$MPIF90" == "" ] ; then TRY_MPIF77="mpxlf90_r" ; fi
+ IPM_LIB_OPTS=" -nofort";
+ CFLAGS="$CFLAGS -I/usr/lpp/ppe.poe/include "
+fi
+if [ "$MACH" == "AIX_aix-5.2_IBM" -o "$MACH" == "AIX_IBMSP_IBM" ] ; then
+ MPICC="mpcc_r" 
+ MPIF77="mpxlf_r" 
+ MPIF77="mpxlf90_r" 
+ IPM_LIB_OPTS=" -nofort";
+fi
+
+if [ "$MACH" == "LINUX_BGL_BLRTSIBM" ] ;then 
+ if [ "$CC" == "" ]; then TRY_CC="blrts_xlc" ; fi 
+ if [ "$CXX" == "" ]; then TRY_CXX="blrts_xlC" ; fi 
+ if [ "$F77" == "" ]; then TRY_F77="blrts_xlf" ; fi
+ if [ "$F90" == "" ]; then TRY_F90="blrts_xlf90" ; fi
+ if [ "$MPICC" == "" ]; then TRY_MPICC="mpcc_r" ; fi
+ if [ "$MPIF77" == "" ]; then TRY_MPIF77="mpxlf_r" ; fi
+ if [ "$MPIF90" == "" ]; then TRY_MPIF77="mpxlf90_r" ; fi
+fi
+
+if [ "$MACH" == "BLRTS_linux-sles10-ppc64_IBM" ] ;then
+ if [ "$CC" == "" ]; then TRY_CC="xlc" ; fi
+ if [ "$CXX" == "" ]; then TRY_CXX="xlC" ; fi
+ if [ "$F77" == "" ]; then TRY_F77="xlf" ; fi
+ if [ "$F90" == "" ]; then TRY_F90="xlf90" ; fi
+ if [ "$MPICC" == "" ]; then TRY_MPICC="mpixlc_r" ; fi
+ if [ "$MPIF77" == "" ]; then TRY_MPIF77="mpixlf77_r" ; fi
+ if [ "$MPIF90" == "" ]; then TRY_MPIF77="mpixlf90_r" ; fi
+fi
+
+if [ "$MACH" == "NEC_SX6_NEC" ] ;then 
+ if [ "$CC" == "" ]; then TRY_CC="sxcc" ; fi 
+ if [ "$CXX" == "" ]; then TRY_CXX="sxCC" ; fi 
+ if [ "$F77" == "" ]; then TRY_F77="sxf90" ; fi
+ if [ "$F90" == "" ]; then TRY_F90="sxf90" ; fi
+ if [ "$MPICC" == "" ]; then TRY_MPICC="sxmpicc" ; fi
+ if [ "$MPIF77" == "" ]; then TRY_MPIF77="sxmpif90" ; fi
+ if [ "$MPIF90" == "" ]; then TRY_MPIF77="sxmpif90" ; fi
+ if [ "$AR" == "" ]; then TRY_AR="sxar"; fi
+fi
+
+if [ "$MACH" == "UNICOS_CRAYX1_CRAY" ] ; then 
+ if [ "$CC" == "" ]; then TRY_CC="cc" ; fi 
+ if [ "$CXX" == "" ]; then TRY_CXX="CC" ; fi 
+ if [ "$F77" == "" ]; then TRY_F77="ftn" ; fi
+ if [ "$F90" == "" ]; then TRY_F90="ftn" ; fi
+ if [ "$MPICC" == "" ]; then TRY_MPICC="mpicc" ; fi
+ if [ "$MPIF77" == "" ]; then TRY_MPIF77="mpif90" ; fi
+ if [ "$MPIF90" == "" ]; then TRY_MPIF90="mpif90" ; fi
+fi
+
+if [ "$MACH" == "LINUX_ALTIX_INTEL" ] ; then 
+ if [ "$MPICC" == "" ]; then TRY_MPICC="mpicc" ; fi
+ if [ "$MPIF77" == "" ]; then TRY_MPIF77="mpif90" ; fi
+ if [ "$MPIF90" == "" ]; then TRY_MPIF90="mpif90" ; fi
+fi
+
+if [ "$MACH" == "CNL_XT4_PGI" ] ; then 
+ if [ "$CC" == "" ]; then TRY_CC="cc" ; fi 
+ if [ "$CXX" == "" ]; then TRY_CXX="CC" ; fi 
+ if [ "$F77" == "" ]; then TRY_F77="ftn" ; fi
+ if [ "$F90" == "" ]; then TRY_F90="ftn" ; fi
+ if [ "$MPICC" == "" ]; then TRY_MPICC="cc" ; fi
+ if [ "$MPIF77" == "" ]; then TRY_MPIF77="ftn" ; fi
+ if [ "$MPIF90" == "" ]; then TRY_MPIF90="ftn" ; fi
+fi
+
+if [ "$MACH" == "LINUX_XT4_PGI" -o "$MACH" == "LINUX_XT3_PGI" ] ; then 
+ if [ "$CC" == "" ]; then TRY_CC="cc" ; fi 
+ if [ "$CXX" == "" ]; then TRY_CXX="CC" ; fi 
+ if [ "$F77" == "" ]; then TRY_F77="ftn" ; fi
+ if [ "$F90" == "" ]; then TRY_F90="ftn" ; fi
+ if [ "$MPICC" == "" ]; then TRY_MPICC="cc" ; fi
+ if [ "$MPIF77" == "" ]; then TRY_MPIF77="ftn" ; fi
+ if [ "$MPIF90" == "" ]; then TRY_MPIF90="ftn" ; fi
+fi
+
+if [ "$MACH" == "BSD_X86_GNU" ] ; then 
+ if [ "$MPICC" == "" ]; then TRY_MPICC="mpicc" ; fi
+ if [ "$MPIF77" == "" ]; then TRY_MPIF77="mpif77" ; fi
+ if [ "$MPIF90" == "" ]; then TRY_MPIF90="mpif90" ; fi
+fi
+
+if [ "$MACH" == "LINUX_linux-rhel4-x86_64_INTEL" ] ; then
+ if [ "$MPICC" == "" ]; then MPICC="mpicc" ; fi
+ if [ "$MPIF77" == "" ]; then MPIF77="mpif90" ; fi
+ if [ "$MPIF90" == "" ]; then MPIF77="mpif90" ; fi
+fi
+
+###
+# }
+###
+
+###
+# Things we know about specific machines {
+###
+
+if [ "$HPCNAME" == "jacquard" ] ; then
+ if [ "$TRY_HPM_CFLAGS" == "" ]; then TRY_HPM_CFLAGS="-I/usr/common/usg/papi/default/include" ; TRY_HPM_LDFLAGS="-L/usr/common/usg/papi/default/lib -lpapi" ; fi
+ if [ "$MPIF77" == "" ]; then MPIF77="mpif90" ; fi
+ if [ "$MPIF90" == "" ]; then MPIF77="mpif90" ; fi
+fi
+
+if [  "$HPCNAME" == "kraken" ] ; then
+ CFLAGS="$CFLAGS -DIPM_DISABLE_PWENT -DIPM_DISABLE_EXECINFO "
+ PAPIROOT="/opt/xt-tools/papi/3.6.2/v23/linux/";
+ TRY_HPM_CFLAGS=$PAPI_INCLUDE_OPTS;
+ TRY_HPM_LDFLAGS=$PAPI_POST_LINK_OPTS;
+ CPUIPM=OPTERON;
+fi
+
+if [ "$HPCNAME" == "franklin" ] ; then
+ CFLAGS="$CFLAGS -DIPM_DISABLE_PWENT -DIPM_DISABLE_EXECINFO -DWRAP_FORTRAN -DCRAY_GPFS_BUG";
+ if [ "$TRY_HPM_CFLAGS" == "" ]; then PAPIROOT="/opt/xt-tools/papi/default/xt-cnl/"; TRY_HPM_CFLAGS="-I$PAPIROOT/include" ; TRY_HPM_LDFLAGS="-L$PAPIROOT/lib64 -lpapi" ; fi
+fi
+
+if [ "$HPCNAME" == "hopper" ] ; then
+ CFLAGS="$CFLAGS -DIPM_DISABLE_PWENT -DIPM_DISABLE_EXECINFO -DWRAP_FORTRAN -DCRAY_GPFS_BUG";
+ TRY_HPM_LDFLAGS=$PAPI_POST_LINK_OPTS;
+ TRY_HPM_CFLAGS=$PAPI_INCLUDE_OPTS;
+fi
+
+if [ "$HPCNAME" == "bigben" ] ; then
+ CFLAGS="$CFLAGS  -DIPM_DISABLE_PWENT -DIPM_DISABLE_EXECINFO "
+ if [ "$TRY_HPM_CFLAGS" == "" ]; then TRY_HPM_CFLAGS="$PAPI_INCLUDE_OPTS_XT" ; TRY_HPM_LDFLAGS="$PAPI_LD_OPTS_XT" ; fi
+# on bigben we cross compile - so cannot measure clock speed
+TICKCHECK="no"
+
+fi
+
+if [ "$HPCNAME" == "pople" ] ; then
+PAPI_RPATH=`echo $PAPI_LIB | sed -e s/-L//| sed -e s/-lpapi//`
+if [ "$TRY_HPM_CFLAGS" == "" ]; then TRY_HPM_CFLAGS="$PAPI_INC" ; TRY_HPM_LDFLAGS="$PAPI_LIB -Wl,-rpath=$PAPI_RPATH" ; fi
+CFLAGS="$CFLAGS  -fPIC "
+TRY_MPIF77="ifort"
+TRY_MPIF90="ifort"
+TRY_MPICC="icc"
+LDFLAGS="-lmpi"
+TICKCHECK="no" 
+fi
+
+if [ "$HPCNAME" == "jaguar" ] ; then
+if [ "$TRY_HPM_CFLAGS" == "" ]; then TRY_HPM_CFLAGS="$PAPI_INCLUDE_OPTS" ; TRY_HPM_LDFLAGS="$PAPI_POST_LINK_OPTS" ; fi
+fi
+
+if [ "$HPCNAME" == "ranger" ] ; then
+if [ "$TRY_HPM_CFLAGS" == "" ]; then TRY_HPM_CFLAGS="-I$TACC_PAPI_INC" ; TRY_HPM_LDFLAGS="-L$TACC_PAPI_LIB -lpapi -lperfctr -lpfm" ; fi
+# on ranger login nodes and compute have different clock speeds
+# now added auto clockspeed get to IPM under linux
+TICKCHECK="no" 
+fi
+if [ "$HPCNAME" == "lonestar" ] ; then
+TRY_HPM_CFLAGS="-I$TACC_PAPI_INC"
+TRY_HPM_LDFLAGS="$TACC_PAPI_LIB/libpapi.so $TACC_PAPI_LIB/libperfctr.so" 
+CFLAGS=$CFLAGS"  -DIPM_DISABLE_EXECINFO "
+# on lonestar login nodes and compute have different clock speeds
+TICKCHECK="no"
+fi
+if [ "$HPCNAME" == "abe" ] ; then
+TRY_HPM=DISABLED
+CFLAGS=$CFLAGS" -DIPM_DISABLE_EXECINFO"
+fi
+if [ "$HPCNAME" == "bgl-sdsc" ] ; then
+CFLAGS=$CFLAGS" -I/bgl/BlueLight/ppcfloor/bglsys/include  -DIPM_DISABLE_PWENT -DIPM_DISABLE_SINGLELOG  -DIPM_DISABLE_EXECINFO -qarch=440 -qtune=440 -DLINUX_BGL "
+fi
+if [ "$HPCNAME" == "bgp-anl" ] ; then
+TRY_MPICC=mpicc
+CFLAGS=$CFLAGS" -DIPM_DISABLE_PWENT -DIPM_DISABLE_SINGLELOG  -DIPM_DISABLE_EXECINFO   -I/bgsys/drivers/ppcfloor/arch/include/"
+TRY_HPM_CFLAGS="-I/soft/apps/current/papi/include"
+TRY_HPM_LDFLAGS="-L/soft/apps/current/papi/lib -lpapi /bgsys/drivers/ppcfloor/runtime/SPI/libSPI.cna.a -lpthread"
+#TRY_HPM_LDFLAGS="-L/soft/apps/current/papi/lib -lpapi  -lpthread"
+fi
+
+###
+###
+# }
+###
+
+CFLAGS=$CFLAGS" -I$BUILD_ROOT/include "
+LDFLAGS=$LDFLAGS" -L$BUILD_ROOT/lib "
+
+###
+# Setup Makefile's make_config and buildtime include/config.h
+###
+
+if [ ! -f "VERSION" ] ; then
+	 echo "unknown version in VERSION file";
+	 echo "(this file should contain the current source version)";
+	 exit;
+else 
+	IPM_VERSION=`cat VERSION`
+fi
+if [ -f "$CONFIG_M" ] ; then
+	$RM $CONFIG_M ;
+	echo "#this file is generated by ./configure" > $CONFIG_M
+	echo "IPM_VERSION=$IPM_VERSION" >> $CONFIG_M
+fi 
+
+if [ -f "$CONFIG_H" ] ; then
+	$RM $CONFIG_H ;
+fi 
+
+echo configuring for $HPCNAME w/ OS=$OS ARCH=$ARCH COMPILER=$COMPILER CPU=$CPUIPM
+
+###
+# Write config.h
+###
+
+cat >> $CONFIG_H <<EOF
+#define IPM_VERSION "$IPM_VERSION"
+#define IPM_HPCNAME "$HPCNAME"
+#define OS_$OS
+#define ARCH_$ARCH
+#define ${OS}_${ARCH}
+#define CPU_${CPUIPM}
+#define COMPILER $COMPILER
+#define IPM_LOG_DIR "$IPM_LOG_DIR"
+EOF
+
+# runs bin/make_wrappers with the -prep flag which stops early and only makes config.h
+$WRAPMAKER -prep $IPM_KEYFILE >> $CONFIG_H
+
+###
+# Run some compiler tests {
+###
+
+for tag in $TRY_CC $CC cc xlc sxcc pgcc ; do
+
+## compile a simple C program  {
+TEST_NAME="simplec"
+echo -n "checking whether the C compiler ( $tag ) works..."
+$RM -rf $TEST_DIR ;  mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+double foobar() {return -1.0;}
+int main(int argc, char *argv[]) {
+foobar();
+; return 0; }
+EOF
+cat >> run <<EOF
+#!/bin/sh -x
+$tag $CFLAGS $LDFLAGS $TEST_NAME.c -o $TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+ CONF_CC=$tag 
+ break
+ cd $BUILD_ROOT
+else
+ echo "no"
+fi
+## }
+cd $BUILD_ROOT
+done
+
+if [ "$CONF_CC" == "" ]  ; then 
+ echo "can't find a C compiler"
+ exit
+else 
+ CC=$CONF_CC
+fi
+
+for tag in $TRY_CXX $CXX cxx xlC sxCC pgCC g++ ; do
+
+## compile a simple C++ program  {
+TEST_NAME="simplecxx"
+echo -n "checking whether the C++ compiler ( $tag ) works..."
+$RM -rf $TEST_DIR ;  mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.cc <<EOF
+#include <iostream>
+#include <iostream>
+#include <iomanip>
+#include <string>
+
+using namespace std;
+
+inline int sub1(int a);
+
+int main() {
+cout << " Hello world. I am a C++ program." << endl;
+// sub1(1);
+return 0;
+}
+
+int sub1(int a) {
+ printf("%d\n", a);
+ return 1;
+}
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$tag $CFLAGS $LDFLAGS ./$TEST_NAME.cc -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+ CXX=$tag 
+ cd $BUILD_ROOT
+ break
+else
+ echo "no"
+fi
+## }
+cd $BUILD_ROOT
+done
+if [ "$CXX" == "" ]  ; then 
+echo "can't find a C++ compiler"
+exit
+fi
+
+for tag in $TRY_F77 $F77 f77 xlf sxf90 gfortran ifort ftn pgf77; do
+## compile a simple F77 program  {
+TEST_NAME="simplef"
+echo -n "checking whether the F77 compiler ( $tag ) works..."
+$RM -rf $TEST_DIR ;  mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.f <<EOF
+      PROGRAM hello 
+
+100   format(a,f10.4)
+
+      INTEGER i
+
+      END
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$tag  $LDFLAGS ./$TEST_NAME.f -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+ F77=$tag 
+ cd $BUILD_ROOT
+ break
+else
+ echo "no"
+fi
+## }
+cd $BUILD_ROOT
+done
+if [ "$F77" == "" ]  ; then 
+ echo "can't find a F77 compiler"
+ exit
+fi
+
+for tag in $TRY_F90 $F90 f90 xlf90 sxf90 gfortran ifort ftn g95 pgf90; do
+## compile a simple F90 program  {
+TEST_NAME="simplef90"
+echo -n "checking whether the F90 compiler ( $tag ) works..."
+$RM -rf $TEST_DIR ;  mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.F <<EOF
+      PROGRAM hello 
+
+      real*8, allocatable,target :: a(:)
+      INTEGER i
+
+100   format(a,f10.4)
+
+
+      END 
+
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$tag  $LDFLAGS ./$TEST_NAME.F -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+ F90=$tag 
+ break
+else
+ echo "no"
+fi
+## }
+cd $BUILD_ROOT
+done
+if [ "$F90" == "" ]  ; then 
+echo "can't find a F90 compiler"
+exit
+fi
+cd $BUILD_ROOT
+
+# } end of CC, F77, F90
+
+
+###
+# Figure out HPM if any {
+###
+
+## compile a simple C HPM program  {
+for tag in $TRY_HPM PAPI PMAPI DISABLED ; do
+TEST_NAME="simplec_HPM_compile"
+echo -n "determining how to compile HPM ($tag) C code ..."
+$RM -rf $TEST_DIR ;  mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+
+#ifdef HPM_PAPI
+#include <papi.h>
+#endif
+
+#ifdef HPM_PMAPI
+#include <pmapi.h> 
+#endif
+
+#ifdef HPM_DISABLED
+/* nothing to include */
+#endif
+
+int main(int argc, char *argv[]) {
+ return 0;
+}
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$CC -c -DHPM_$tag $TRY_HPM_CFLAGS $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME.o
+if [ -f ./$TEST_NAME.o ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ HPM=$tag 
+ HPM_CFLAGS=$TRY_HPM_CFLAGS
+ cd $BUILD_ROOT
+ break
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+done
+
+ if [ "$HPM" == "" ] ; then 
+ echo "*** HPM include files not found, HPM disabled ***"
+ HPM="DISABLED"
+ TRY_HPM="DISABLED"
+else 
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+fi
+## }
+
+
+## link a simple C HPM program  {
+HPM_LDFLAGS=""
+for tag in  "$TRY_HPM_LDFLAGS -lpapi" "$TRY_HPM_LDFLAGS -lpapi -lperfctr" "$TRY_HPM_LDFLAGS -lpapi -lpfm" "-lpapi" "-lpapi -lperfctr" "-lpmapi" "${TRY_HPM_LDFLAGS}64 -lpapi -lperfctr" "${TRY_HPM_LDFLAGS}64 -lpapi" "${TRY_HPM_LDFLAGS}64 -lpapi -lpfm"; do
+TEST_NAME="simplec_HPM_link"
+echo -n "determining how to link HPM ($HPM) code ($tag)..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+
+#ifdef HPM_PAPI
+#include <papi.h>
+#endif
+
+#ifdef HPM_PMAPI
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <errno.h>
+#include <pmapi.h> 
+#endif
+
+int main(int argc, char *argv[]) {
+ int i,rv;
+ double x,y=0.1;
+
+#ifdef HPM_PAPI
+  int retval, EventSet=PAPI_NULL;
+  long_long values[1];
+
+  PAPI_create_eventset(&EventSet);
+  PAPI_add_event(EventSet, PAPI_TOT_INS);
+  PAPI_start(EventSet);
+  for(i=0;i<1000000;i++) x+=y;
+  PAPI_read(EventSet, values);
+  PAPI_stop(EventSet, values);
+#endif
+
+#ifdef HPM_PMAPI
+ pm_prog_t pmapi_prog; 
+ pm_info_t pmapi_info;
+ pm_groups_info_t pmapi_groups_info;
+ pm_data_t pmapi_data;
+ rv = pm_init(PM_VERIFIED, &pmapi_info, &pmapi_groups_info);
+#endif
+
+#ifdef HPM_DISABLED
+/* nothing to include */
+#endif
+
+ return 0;
+}
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$CC -DHPM_$HPM $HPM_CFLAGS $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME $tag
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+ HPM_LDFLAGS=$tag
+ HPM_TEST=YES
+ break
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+done
+
+ if [ "$HPM_LDFLAGS" == "" ] ; then
+ echo "*** HPM link files not found, HPM disabled ***"
+ HPM="DISABLED"
+ TRY_HPM="DISABLED"
+fi
+
+
+## }
+cd $BUILD_ROOT
+
+# }
+
+
+CFLAGS=$CFLAGS" $HPM_CFLAGS "
+LDFLAGS=$LDFLAGS" $HPM_LDFLAGS "
+cat >> $CONFIG_H << EOF
+#define HPM_$HPM
+EOF
+
+
+###
+# See if ipm.h works {
+###
+
+cd src
+../bin/make_wrappers ../ipm_key
+cd ..
+
+## compile a simple serial C program w/ IPM macros {
+TEST_NAME="simplec_IPM"
+echo -n "checking for working IPM macros in ipm.h..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <ipm.h>
+double foobar() {return -1.0;}
+int main(int argc, char *argv[]) {
+ ipm_taskdata task;
+foobar();
+; return 0; }
+EOF
+cat > ./run <<EOF
+#!/bin/sh -x
+$CC $CFLAGS -DIPM_STIME_SOURCE_IS_NULL $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME $LDFLAGS
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+else
+ echo "no"
+ echo "see config.log for compiler errors."
+ exit 1
+fi
+cd $BUILD_ROOT
+## }
+
+## check for the gettimeofday wall timer {
+TEST_NAME="gettimeofday_timer"
+echo -n "checking for working gettimeofday..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <ipm.h>
+
+double foobar() {sleep(1);}
+double t1,t2;
+
+int main(int argc, char *argv[]) {
+ ipm_taskdata task;
+ IPM_TIME_GTOD(t1); 
+ foobar();
+ IPM_TIME_GTOD(t2); 
+
+ if(t2-t1 < 0.0) {
+  return 1;
+ }
+ if(((t2-t1)-1.0)*((t2-t1)-1.0) < 0.1) {
+  return 0;
+ }
+}
+
+EOF
+cat > ./run <<EOF
+#!/bin/sh -x
+$CC -DIPM_STIME_SOURCE_IS_GTOD $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+##}
+
+## compile a simple serial C program w/ IPM serial timer {
+for tag in $TRY_STIMER RTC READREALTIME RTS ITC RDTSC GTOD NULL; do
+TEST_NAME="simplec_IPM_stimer"
+echo -n "checking for working IPM serial timer macro ($tag) in ipm.h..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+
+/* bogus time values are OK here since we are pre-callibration 
+   we just want to know the type of clock to use */
+
+#ifndef IPM_SECONDSPERTICK
+#define IPM_SECONDSPERTICK 0.123
+#endif
+
+#include <ipm.h>
+
+double foobar() {return -1.0;}
+double t1,t2,iwall;
+IPM_TICK_TYPE T1,T2;
+
+int main(int argc, char *argv[]) {
+ ipm_taskdata task;
+ IPM_TIME_BRACKET(
+ foobar();
+ )
+; return 0; }
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$CC -DIPM_STIME_SOURCE_IS_${tag} $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+ STIME=$tag
+ cd $BUILD_ROOT
+ break
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+done
+## }
+
+cat >> $CONFIG_H << EOF
+#define IPM_STIME_SOURCE_IS_$STIME
+EOF
+
+
+
+if [ "$STIME" == "RDTSC" -o "$STIME" == "ITC" ] ; then 
+if [ "$TICKCHECK" == "yes" ] ; then 
+## determine the number of clock ticks per second {
+TEST_NAME="simplec_IPM_stimer_get"
+echo -n "determining clock frequency..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+/* bogus time values are OK here since we are pre-callibration 
+   we just want to know the type of clock to use */
+
+#ifndef IPM_SECONDSPERTICK
+#define IPM_SECONDSPERTICK 0.123
+#endif
+#include <ipm.h>
+int main(int argc, char *argv[]) {
+ 
+ double t1,t2;
+ IPM_TICK_TYPE T1,T2;
+
+ IPM_TIME_INIT
+ IPM_TIME_GTOD(t1);
+ IPM_TIME_BRACKET( sleep(1);)
+ IPM_TIME_GTOD(t2);
+ if (t2 <= t1) return 1;
+ if (T2 <= T1) return 2;
+ printf("%.12e\n",(t2-t1)/(T2-T1));
+; return 0; }
+
+EOF
+cat >> ./run <<EOF
+#!/bin/sh
+$CC $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME 
+./$TEST_NAME 
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+SECONDSPERTICK=`./run`
+echo $SECONDSPERTICK >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ GHZ=`echo print 1e-9/$SECONDSPERTICK\; | perl`
+ echo "yes ( $SECONDSPERTICK sec per tick $GHZ GHz )"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+ STIME=$tag
+else
+ echo "no"
+fi
+## }
+fi
+cat >> $CONFIG_H << EOF
+#define IPM_SECONDSPERTICK $SECONDSPERTICK
+EOF
+
+cd $BUILD_ROOT
+
+fi
+
+## compile a simple MPI C program w/o IPM  {
+for tag in $TRY_MPICC cc "cc -lmpi" mpcc mpicc ; do
+TEST_NAME="simplec_mpi"
+echo -n "checking for working MPI C compiler ($tag) ..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+double foobar() {return -1.0;}
+int main(int argc, char *argv[]) {
+ MPI_Init(&argc,&argv);
+ MPI_Barrier(MPI_COMM_WORLD);
+ foobar();
+ MPI_Finalize();
+; return 0; }
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$tag $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+ MPICC=$tag
+ cd $BUILD_ROOT
+ break
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+done
+## }
+
+## compile a simple MPI C program w/ IPM macros {
+TEST_NAME="simplec_MPI_IPM"
+echo -n "checking whether the MPI C compiler ($MPICC $CFLAGS $LDFLAGS) works with IPM macros..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+#include <ipm.h>
+double foobar() {return -1.0;}
+ipm_taskdata task;
+int main(int argc, char *argv[]) {
+ MPI_Init(&argc,&argv);
+ MPI_Barrier(MPI_COMM_WORLD);
+ foobar();
+ MPI_Finalize();
+; return 0; }
+EOF
+cat > ./run <<EOF
+#!/bin/sh -x
+$MPICC $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+else
+ echo "no"
+ echo "see config.log for compiler errors."
+ exit 1
+fi
+cd $BUILD_ROOT
+## }
+
+## compile a simple MPI F77 program w/o IPM  {
+for tag in $TRY_MPIF77 ftn f77 ifort mpiifort "ifort -lmpi" gfortran mpxlf mpif77 ; do
+TEST_NAME="simplef_mpi"
+echo -n "checking for working MPI F77 compiler ($tag) ..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.f <<EOF
+      PROGRAM hello 
+
+100   format(a,f10.4)
+      INCLUDE 'mpif.h'
+      INTEGER rank, size, ierr
+      INTEGER i
+      CALL MPI_INIT( ierr )
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      CALL MPI_FINALIZE(ierr)
+
+      END
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$tag $FFLAGS $LDFLAGS ./$TEST_NAME.f -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+ MPIF77=$tag
+
+# For linux add fortran support
+if [ "$OS" == "LINUX" ] ; then
+  CFLAGS="$CFLAGS -DWRAP_FORTRAN";
+   IPM_LIB_OPTS=" ";
+fi
+if [ "$OS" == "" ] ; then
+ OS=`uname`;
+ if [ "$OS" == "Linux" ] ; then
+# internal macros use all caps
+   OS="LINUX";
+   CFLAGS="$CFLAGS -DWRAP_FORTRAN";
+   IPM_LIB_OPTS=" ";
+ fi
+fi
+
+ cd $BUILD_ROOT
+ break
+else
+ echo "no"
+ IPM_LIB_OPTS=" -nofort";
+fi
+cd $BUILD_ROOT
+done
+## }
+
+
+## determine underscoring in a MPI F77 program {
+if [ "$MPIF77" != "" ]; then 
+TEST_NAME="simplef_mpi_underscores"
+echo -n "checking underscores for F77 objects..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.f <<EOF
+      PROGRAM hello 
+100   format(a,f10.4)
+      INCLUDE 'mpif.h'
+      INTEGER rank, size, ierr
+      INTEGER i
+      CALL MPI_INIT( ierr )
+      call MPI_Barrier(MPI_COMM_WORLD, ierr)
+      call PMPI_Barrier(MPI_COMM_WORLD, ierr)
+      CALL MPI_FINALIZE(ierr)
+      END
+EOF
+cat >> ./run <<EOF
+#!/bin/bash 
+
+PRE="0"
+POST="0"
+$MPIF77 -c $FFLAGS $LDFLAGS ./${TEST_NAME}.f -o ./${TEST_NAME}.o
+OBJ_FILE=./${TEST_NAME}.o
+if [ -f \$OBJ_FILE ] ; then 
+ MPI_NAME=\`nm \$OBJ_FILE  | grep mpi_init | grep -vi pmpi | awk '{print \$2}'\`
+ if [ \`echo \$MPI_NAME | grep -c '_mpi'\` == "1" ] ; then
+  PRE="1"
+ fi 
+ if [ \`echo \$MPI_NAME | grep -c '__mpi'\` == "1" ] ; then
+  PRE="2"
+ fi 
+ if [ \`echo \$MPI_NAME | grep -c 'init_'\` == "1" ] ; then
+  POST="1"
+ fi 
+ if [ \`echo \$MPI_NAME | grep -c 'init__'\` == "1" ] ; then
+  POST="2"
+ fi 
+ echo "\$PRE \$POST"
+ exit 0
+else 
+ exit 1
+fi
+EOF
+
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+cat ./run >> $CONFIG_LOG
+FUNDERSCORES_PRE=`./run | awk '{print $1}'`
+FUNDERSCORES_POST=`./run | awk '{print $2}'`
+
+FUNDERSCORE="";
+
+if [ "0" == "1" ] ; then
+if  [ "$FUNDERSCORES_PRE" == "1" ] ; then  
+ echo -n "pre1," 
+ FUNDERSCORE="$FUNDERSCORE -funderscore_pre ";
+elif  [ "$FUNDERSCORES_PRE" == "2" ] ; then  
+ echo -n "pre2," 
+ FUNDERSCORE="$FUNDERSCORE -funderscore_pre -funderscore_pre";
+fi
+fi
+
+if  [ "$FUNDERSCORES_POST" == "0" ] ; then  
+ echo "none"
+elif  [ "$FUNDERSCORES_POST" == "1" ] ; then  
+ echo "1" 
+ FUNDERSCORE="$FUNDERSCORE -funderscore_post ";
+elif  [ "$FUNDERSCORES_POST" == "2" ] ; then  
+ echo "2" 
+ FUNDERSCORE="$FUNDERSCORE -funderscore_post -funderscore_post";
+else
+ echo "unknown"
+ echo "see config.log for compiler errors."
+ exit 1
+fi
+cd $BUILD_ROOT
+## }
+fi
+# endif MPIF77 exists
+
+## determine MPI_STATUS_COUNT  {
+MPI_STATUS_COUNT=""
+for tag in val1 count _count size; do
+TEST_NAME="simplec_MPI_STATUS_COUNT"
+echo -n "checking MPI_STATUS_COUNT ($tag)..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+int main(int argc, char *argv[]) {
+ MPI_Status s;
+ s.$tag = 0;
+ return 0;
+}
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$MPICC $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ MPI_STATUS_COUNT=$tag
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+done
+ if [ "$MPI_STATUS_COUNT" == "" ] ; then 
+ echo "unknown MPI_STATUS_COUNT"
+ exit 1
+else 
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+fi
+## }
+
+## determine MPI_STATUS_SOURCE  {
+MPI_STATUS_SOURCE=""
+for tag in val1 MPI_SOURCE; do
+TEST_NAME="simplec_MPI_STATUS_SOURCE"
+echo -n "checking MPI_STATUS_SOURCE ($tag)..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+int main(int argc, char *argv[]) {
+ MPI_Status s;
+ s.$tag = 0;
+ return 0;
+}
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$MPICC $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ MPI_STATUS_SOURCE=$tag
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+done
+ if [ "$MPI_STATUS_COUNT" == "" ] ; then 
+ echo "unknown MPI_STATUS_SOURCE"
+ exit 1
+else 
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+fi
+## }
+
+## determine nature of MPI executables {
+TEST_NAME="simplec_MPI_exec"
+MPI_EXEC_FORMAT=""
+echo -n "checking MPI executable format..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+int main(int argc, char *argv[]) {
+ MPI_Status s;
+ return 0;
+}
+EOF
+cat >> ./run <<EOF
+#!/bin/sh 
+$MPICC $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ file  ./$TEST_NAME
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ MPI_EXEC_FORMAT=`./run`
+ echo $MPI_EXEC_FORMAT
+ case "$MPI_EXEC_FORMAT" in 
+  *dynamically* ) MPI_EXEC_DYNAMIC=1 ;;
+  *static* ) MPI_EXEC_STATIC=1 ;;
+  *32-bit* ) MPI_EXEC_32BIT=1;;
+  *64-bit* ) MPI_EXEC_64BIT=1;;
+  *Mach-O* )
+	 MPI_EXEC_32BIT=1;
+	 MPI_EXEC_DYNAMIC=1;
+	;; 
+ esac 
+else
+ echo "unknown"
+fi
+ if [ "$MPI_EXEC_FORMAT" == "" ] ; then 
+ echo "unknown MPI_EXEC_FORMAT"
+ exit 1
+else 
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+fi
+cd $BUILD_ROOT
+## }
+
+## run a simple MPI C program  {
+MPIRUN=""
+TEST_NAME="simplec_MPI_run"
+for tag in " " "mpiexec -n $TEST_TASKS" "mpirun -np $TEST_TASKS" "mpiexec -n $TEST_TASKS" "aprun -n $TEST_TASKS"; do
+echo -n "checking how to run a simple MPI code ($tag)..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./$TEST_NAME.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+int main(int argc, char *argv[]) {
+ int rank, size;
+ MPI_Init(&argc,&argv);
+ MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+ MPI_Comm_size(MPI_COMM_WORLD, &size);
+ MPI_Barrier(MPI_COMM_WORLD);
+ if(rank == size -1) { 
+  printf("maxrank=%d\n", rank);
+ }
+ MPI_Finalize();
+ return 0; }
+EOF
+cat > ./run <<EOF
+#!/bin/sh -x
+$MPICC $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME
+if [ -x ./$TEST_NAME ] ; then 
+ CHECK=\`$tag ./$TEST_NAME 2>&1 | grep maxrank\=$(($TEST_TASKS - 1)) | wc -l | awk '{print \$1}'\`
+ if [ "\$CHECK" == "1" ] ; then 
+  exit 0
+ else 
+  exit 1
+ fi
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ echo "yes"
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+ MPIRUN=$tag
+ cd $BUILD_ROOT
+ break
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+done
+
+if [ "$MPIRUN" == "" ] ; then 
+ unset MPIRUN
+else 
+ MPIRUN=$tag
+ MPI_EXEC_CLI=1
+fi 
+
+## }
+
+## some tests that apply only to shared library systems {
+if [ "$MPI_EXEC_DYNAMIC" == "1" ] ; then 
+
+## find out how to make our own shared library {
+SOLDFLAGS=""
+TEST_NAME="simplec_MPI_sharedlib"
+for tag in " " "-shared" "-fPIC -shared" "-ldl" "-dynamiclib -fno-common" "-qmkshrobj" ; do
+echo -n "testing shared library support ($tag)..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./lib${TEST_NAME}.c <<EOF
+ int MPI_Init(int *argc, char ***argv) { return -2; }
+ int MPI_Finalize(void) { return -3; }
+EOF
+cat >> ./${TEST_NAME}.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+int main(int argc, char *argv[]) {
+ MPI_Status s;
+ MPI_Init(&argc,&argv);
+ MPI_Finalize();
+ return 0;
+}
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$CC $CFLAGS $LDFLAGS $tag -o ./lib${TEST_NAME}.so ./lib${TEST_NAME}.c 
+$MPICC $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME -I. ./lib${TEST_NAME}.so
+if [ -x ./$TEST_NAME ] ; then 
+ exit 0
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ SOLDFLAGS=$tag
+ echo "yes"
+ cd $BUILD_ROOT
+ break;
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+done
+ if [ "$SOLDFLAGS" = "" ] ; then 
+ echo "unknown shared library creation flags"
+ exit 1
+else 
+ echo "#test $TEST_NAME end } " >> $CONFIG_LOG
+fi
+## }
+
+## determine if we have LD_PRELOAD {
+TEST_NAME="simplec_ldpreload"
+for tag in "LD_PRELOAD" "DYLD_INSERT_LIBRARIES" "DYLD_FORCE_FLAT_NAMESPACE=YES DYLD_INSERT_LIBRARIES"; do
+echo -n "checking for LD_PRELOAD ($tag)..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./lib${TEST_NAME}.c <<EOF
+#include <stdarg.h>
+#include <stdio.h>
+int printf(const char *str, ...) {
+  va_list ap;
+  va_start(ap, str);
+  str = va_arg(ap, char *);
+  va_end(ap);
+  puts("GOT LD_PRELOAD");
+  return 0;
+ }
+EOF
+cat >> ./${TEST_NAME}.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+double cfunc(int arg) { return 1.0*arg; }
+int main(int argc, char *argv[]) {
+ printf("%s %f", "HAVE LD_PRELOAD?\n", cfunc(argc));
+ return 0;
+}
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$CC $CFLAGS $LDFLAGS -c -o ./lib${TEST_NAME}.so ./lib${TEST_NAME}.c 
+$CC $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME 
+if [ -x ./$TEST_NAME ] ; then 
+ CHECK=\`$tag=./lib${TEST_NAME}.so ./$TEST_NAME | grep "GOT LD_PRELOAD" | wc -l | awk '{print \$1}'\`
+ if [ "\$CHECK" == "$TEST_TASKS" ] ; then 
+  exit 0
+ else
+  exit 1
+ fi
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ "$?" == "0" ] ; then 
+ HAVE_LDPRELOAD=1
+ LDPRELOAD_ENV=$tag
+ echo "yes"
+ cd $BUILD_ROOT
+ break;
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+done
+
+## }
+
+
+## determine if we have LD_PRELOAD in the parallel environment {
+
+MPIRUN_LDPRELOAD=""
+TEST_NAME="simplec_MPI_preload"
+TEST_PL="LD_PRELOAD=./libpl.so"
+for tag in "$TEST_PL $MPIRUN" "$TEST_PL $MPIRUN -x" "$MPIRUN -x $TEST_PL" ; do
+echo -n "testing LD_PRELOAD within MPI environment ($tag)..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./libpl.c <<EOF
+ int MPI_Init(int *argc, char ***argv) { return -2; }
+ int MPI_Finalize(void) { return -3; }
+EOF
+cat >> ./${TEST_NAME}.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+int main(int argc, char *argv[]) {
+ int rv1,rv2;
+ MPI_Status s;
+ rv1=MPI_Init(&argc,&argv);
+ rv2=MPI_Finalize();
+ if(rv1 == -2 && rv2 == -3) {
+  printf("GOT LD_PRELOAD\n");
+ } else {
+  printf("NO LD_PRELOAD\n");
+ }
+ return 0;
+}
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$CC $CFLAGS $SOLDFLAGS $LDFLAGS -o ./libpl.so ./libpl.c 
+$MPICC $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME 
+if [ -x ./$TEST_NAME ] ; then 
+ CHECK=\`$tag  ./$TEST_NAME | grep "GOT LD_PRELOAD" | wc -l | awk '{print \$1}'\`
+ if [ "\$CHECK" == "$TEST_TASKS" ] ; then 
+  exit 0
+ else
+  exit 1
+ fi
+else 
+ exit 1
+fi
+EOF
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ MPIRUN_LDPRELOAD=$tag
+ echo "yes"
+ cd $BUILD_ROOT
+ break;
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+done
+
+## }
+
+## determine if we have LD_PRELOAD in the parallel environment via script wrapper {
+
+if [ "$MPIRUN_LDPRELOAD" == "" ] ; then 
+TEST_NAME="simplec_MPI_preload_script"
+TEST_PL="LD_PRELOAD=./libpl.so"
+echo -n "testing LD_PRELOAD within MPI environment (using wrapper)..."
+rm -rf $TEST_DIR ; mkdir $TEST_DIR ; cd $TEST_DIR
+cat >> ./libpl.c <<EOF
+ int MPI_Init(int *argc, char ***argv) { return -2; }
+ int MPI_Finalize(void) { return -3; }
+EOF
+cat >> ./${TEST_NAME}.c <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+int main(int argc, char *argv[]) {
+ int rv1,rv2;
+ MPI_Status s;
+ rv1=MPI_Init(&argc,&argv);
+ rv2=MPI_Finalize();
+ if(rv1 == -2 && rv2 == -3) {
+  printf("GOT LD_PRELOAD\n");
+ } else {
+  printf("NO LD_PRELOAD\n");
+ }
+ return 0;
+}
+EOF
+cat >> ./wrapper <<EOF
+export $TEST_PL
+./$TEST_NAME
+EOF
+cat >> ./run <<EOF
+#!/bin/sh -x
+$CC $CFLAGS $SOLFLAGS $LDFLAGS -o ./libpl.so ./libpl.c 
+$MPICC $CFLAGS $LDFLAGS ./$TEST_NAME.c -o ./$TEST_NAME 
+if [ -x ./$TEST_NAME ] ; then 
+ CHECK=\`$MPIRUN  ./wrapper | grep "GOT LD_PRELOAD" | wc -l | awk '{print \$1}'\`
+ if [ "\$CHECK" == "$TEST_TASKS" ] ; then 
+  exit 0
+ else
+  exit 1
+ fi
+else 
+ exit 1
+fi
+EOF
+chmod +x ./wrapper
+chmod +x ./run
+echo "#test $TEST_NAME start {" >> $CONFIG_LOG
+./run >> $CONFIG_LOG 2>&1
+if [ $? == 0 ] ; then 
+ MPIRUN_LDPRELOAD=USE_SCRIPT_WRAPPER
+ echo "yes"
+ break;
+else
+ echo "no"
+fi
+cd $BUILD_ROOT
+
+fi
+## fi above is PRELOAD conditional
+## }
+
+fi
+## end of shared library tests }
+
+###
+#} end of tests
+###
+
+###
+# Write config.h again based on the tests
+###
+
+cat >> $CONFIG_H << EOF
+
+#define MPI_STATUS_COUNT $MPI_STATUS_COUNT
+#define MPI_STATUS_SOURCE $MPI_STATUS_SOURCE
+
+EOF
+
+###
+# Write make_config
+###
+
+$RM -f $CONFIG_M
+echo "#this file is generated by ./configure" > $CONFIG_M
+
+for v in IPM_VERSION OS ARCH COMPILER HPM CC CXX F77 F90 MPICC MPIF77 MPIF90 LINKER MPILINKER AR CFLAGS FFLAGS LDFLAGS MPI_LDFLAGS HPM_CFLAGS HPM_LDFLAGS SOLDFLAGS WRAPMAKER FUNDERSCORE IPM_LIB_OPTS IPM_KEYFILE IPM_START_STATE MPIRUN MPIRUN_FLAGS MPIVENDOR MPI_EXEC_DYNAMIC MPI_EXEC_STATIC MPI_EXEC_32BIT MPI_EXEC_64BIT MPIRUN_LDPRELOAD TEST_NTASKS TEST_ STIME; do
+ if [ "${!v}" != "" ] ; then 
+ echo "$v=${!v}" >>  $CONFIG_M
+ fi
+done
+
+# If prefix is specified, let's do something with it and pass it along
+# to the makefile for installation.
+
+echo "prefix = $PREFIX"
+
+if [ x"$PREFIX" != "x" ];then
+   echo "INSTALL_ROOT=$PREFIX" >> $CONFIG_M
+fi
+
+echo done. now do "make" 
+
